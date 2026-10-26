@@ -56,7 +56,7 @@ Vite builds a completely static site into `dist/`, with relative asset URLs so i
 
 ### GitHub Pages
 
-The workflow runs the build and unit tests on pushes and pull requests. To publish on GitHub Pages, select **Settings → Pages → Source → GitHub Actions**, then run **Build and deploy to GitHub Pages** from the Actions tab. Publication is manual so a new repository does not fail its first check before Pages has been enabled.
+The workflow runs the build and unit tests on pushes and pull requests. Every push to `main` automatically publishes the built site to GitHub Pages; pull requests only run checks. The workflow can also be run manually from the Actions tab. The repository’s **Settings → Pages → Source** must be set to **GitHub Actions**.
 
 ### The typewriter
 
