@@ -4,6 +4,14 @@ A quiet place to write. Two rooms, one page.
 
 **The quiet room** pairs an open monochrome canvas with Lora typography, generous line spacing, a native caret and restrained motion. **The writer’s atelier** places the same writing on textured parchment, fed into an original, animated 3D typewriter.
 
+## The rooms
+
+| The quiet room | The writer’s atelier |
+| --- | --- |
+| ![Minimalist writing room](docs/screenshots/quiet-room.jpg) | ![Typewriter with software rendering](docs/screenshots/atelier.jpg) |
+
+The atelier screenshot uses the software fallback; WebGL adds physically based lighting and shadows.
+
 ## Write
 
 Open the page and start typing. The button in the bottom-right corner changes rooms without replacing the document or its selection.
