@@ -1,46 +1,34 @@
 # Design and QA
 
+Current implementation and verification: **2026-10-26**. This replaces the earlier SVG-renderer notes and numeric visual scores.
+
 ## Direction
 
-Taste Skill v2 application run: **Achromatic ledger**, seed `20376927`. Palette and typography were kept from the brief. No redraws.
+type. keeps its established identity: two rooms share one document. The quiet room is an open monochrome writing surface with Lora; the writer’s atelier uses Special Elite on warm paper above a mechanical typewriter. DM Sans remains the control face in both rooms. Page management and export stay secondary to writing. No sample document is inserted into a new installation.
 
-The job is to start writing immediately. The text is the largest object; page management and export stay secondary. A native textarea preserves the operating system’s editing and IME behavior. No sample documents are inserted into a new installation.
+The supplied Continental photograph informed the mechanical proportions and key treatment. It is a visual reference, not a bitmap asset in the product. The current keyboard uses shallow concave near-black faces, thin aged-nickel rims, ivory legends, short dark stems, a black space bar and classic staggered rows. The earlier thick, bright key treatment was replaced. [DESIGN.md](../DESIGN.md) records the built palette, typography, layout and material rules.
 
-The central idea: the same page moves between an open writing surface and a tactile machine. The first room uses DM Sans for controls and Lora for writing; the atelier uses DM Sans for controls and Special Elite for writing. The two rooms share one source of document state.
+## Implementation
 
-The vintage scene uses shadows, material textures and a warm light falloff because physical parchment and a 3D typewriter are explicit requirements. These exceptions are documented beside the relevant rules. Monospace fallback faces serve the requested typewriter lettering. There are no retrieved images to credit.
+- Three.js loads when the atelier is needed. Local geometry and seeded procedural surfaces supply the machine, desk, paper and lettering; no remote model or texture is loaded.
+- Keys and individual type bars, ribbon, spools, carriage and return lever respond to writing. Raycast key and lever clicks enter the same editor input pipeline as keyboard input.
+- The paper uses a 40 × 56-segment mesh, a thin underside and an edge outline. Fibre and bump maps, a feed curve and curled edges give it material detail. Coupled damped bending strips advance in fixed 1/120-second steps and react to typing, Return and corner dragging. This is lightweight visual physics, not measured paper mechanics, finite-element analysis or a full rigid-body simulation.
+- The title input and textarea remain native DOM controls. Their shared page follows the projected central reading area while the surrounding mesh deforms. Click-to-type and Return use a native undo bridge through `execCommand`, with a range-edit fallback when insertion is unavailable; fallback undo behavior remains browser-dependent.
+- Rendering sleeps at rest and in background tabs. Reduced motion suppresses animated mechanical feedback and paper flexing. WebGL initialization failure or context loss switches to an editable paper surface with a dimensional CSS keyboard. The previous SVG scene renderer is no longer used. Generated paper fibre is retained after context loss when available; startup without WebGL does not guarantee this texture.
 
-## Browser verification
+## Verification
 
-The managed cloud browser was used through its supported CUA interface. Desktop and responsive iframe viewports at 390, 768 and 1440 CSS pixels were reviewed. These are responsive layout checks, not physical-device or virtual-keyboard tests.
+The production build and all five Node tests passed. Three tests cover paper spring stability, its pinned feed edge and consistent fixed-step behavior across frame intervals.
 
-Verified flows: entering a title and body; updating counts; retaining a long mixed Chinese/English document through refresh and theme switching; creating and reopening pages; opening and closing the drawer; entering and leaving focus mode; adjusting text size; using physical-key input and Return; downloading a UTF-8 text file; preserving a usable writing area above the platen.
+The current WebGL scene was captured in Chromium with ANGLE SwiftShader at **1440 × 1000**, **390 × 844**, **768 × 1024** and **1366 × 768** CSS pixels. Independent visual review examined all four captures and found no remaining material visual issue. DOM checks found no horizontal overflow at those sizes. These are browser viewport checks, not physical-device tests. The README’s [atelier image](screenshots/atelier.jpg) comes from this WebGL capture; it does not show the retired SVG fallback.
 
-The final production build was also opened through Vite Preview, and its built asset URLs were verified.
+Browser interaction checks passed with zero page errors:
 
-The cloud browser disables WebGL. The same scene’s SVG fallback and key animations were visually inspected. WebGL code passes TypeScript and the production build, but its GPU lighting, shadows and frame rate require verification in a WebGL-enabled browser. Real Chinese keyboard composition and mobile virtual keyboard behavior require device testing.
+- Mixed Chinese, Latin and emoji insertion; autosave and reload; long-document caret scrolling.
+- Raycast key clicks and corner dragging; reduced-motion behavior; a usable CSS fallback after forced WebGL context loss.
+- Text preservation across room changes, including a settled quiet-room layout with the atelier transform cleared.
+- Return click → undo → redo, and raycast A-key click → undo → redo.
 
-Taste Skill’s source lint was run. Its direct Chrome inspector cannot be used under this environment’s browser-control policy; supported CUA screenshots and read-only DOM measurements were used instead. No inspector pass is claimed.
+## Remaining limits
 
-## Critique
-
-ROUND 1
-Seen in one second: an open page, or an old mechanical typewriter with parchment.
-Idea (one sentence): the writer’s own words stay in place while the writing instrument changes.
-Live thing: typing, switching rooms, key feedback and the returning paper.
-Layout words by section: shell=quiet perimeter / work=single readable column / atelier=paper over the machine.
-Scores: design 7.5 · usability 7.5 · creativity 7.5 · content 8.0 → overall 7.6
-Caps applied: application-screen conventions; physical-object materials are brief-required exceptions.
-Top three problems (most visible first), each with the screenshot it shows in and the fix:
-1. Desktop atelier: paper extended behind the machine and hid the caret. Its height is now projected from the actual platen position.
-2. Desktop software renderer: rendering the complete scene on every key blocked input. It now renders at rest/resize and animates vector keys independently.
-3. Phone atelier: the deliberately wide model created horizontal overflow. The writing-room boundary now clips the oversized model; the paper keeps its own scrolling area.
-
-ROUND 2
-Seen in one second: a writing environment with a tactile alternative, not a marketing page.
-Idea (one sentence): changing the instrument changes the feeling, while keeping the writing intact.
-Live thing: the current document moves between rooms without a reset.
-Layout words by section: shell=light utility controls / work=writing-first / atelier=projected paper and mechanical object.
-Scores: design 7.8 · usability 8.0 · creativity 7.5 · content 8.0 → overall 7.8
-Caps applied: GPU rendering remains unverified in this environment; no award-level quality claim.
-Remaining limitation: the SVG fallback has flatter lighting and simpler mechanical motion than WebGL, and small-screen keyboard behavior needs a physical-device check.
+Desktop hardware-GPU frame rate, real phones and their virtual keyboards, and genuine operating-system IME composition have not been verified. Mixed CJK text insertion does not establish an IME composition pass. Native controls and composition event handling are present, but these device-specific behaviors still need direct testing. SwiftShader confirms the WebGL rendering path and interactions without establishing hardware performance.

@@ -1,0 +1,94 @@
+/* The established atelier, with the page and instrument sharing one 3D coordinate space. */
+[data-theme=atelier] { --ground: #302820; --ink: #eee5d5; --muted: #c1b5a5; --panel: #393129; }
+html[data-theme=atelier], [data-theme=atelier] body { overflow-x: hidden; }
+[data-theme=atelier] #app { background: radial-gradient(ellipse at 43% 24%, #4c3c2d 0, #302820 72%); }
+[data-theme=atelier] .retro-ambience::after { display: none; }
+[data-theme=atelier] .writing-room { min-height: max(680px, calc(100svh - 100px)); isolation: isolate; overflow: clip; }
+[data-theme=atelier] .room-caption { top: 7px; }
+[data-theme=atelier] .writing-room .machine-stage {
+  position: absolute; display: block; top: 0; bottom: 72px; height: auto;
+  width: min(100%, 1060px); left: 50%; transform: translateX(-50%);
+  z-index: 1; pointer-events: auto; animation: none;
+  mask-image: linear-gradient(transparent, #000 48px, #000 calc(100% - 26px), transparent), linear-gradient(90deg, transparent, #000 9%, #000 91%, transparent);
+  mask-composite: intersect;
+}
+.machine-stage canvas { width: 100%; height: 100%; display: block; touch-action: pan-y; }
+[data-theme=atelier] .writing-room .page {
+  top: 0; left: 0; margin: 0; z-index: 3; min-height: 0; border-radius: 0;
+  animation: none; transform-origin: 0 0; clip-path: none;
+  background-color: #e9dfc8; background-image: var(--paper-fibre);
+  box-shadow: 2px 9px 24px #0004;
+}
+[data-theme=atelier] .writing-room.has-3d-paper .page { background: transparent; box-shadow: none; }
+[data-theme=atelier] .writing-room .page::after,
+[data-theme=atelier] .writing-room .paper-texture { display: none; }
+[data-theme=atelier] .writing-room .page-inner { padding: 31px 42px 43px; overscroll-behavior: contain; scrollbar-gutter: stable; scrollbar-color: #82745c66 transparent; }
+[data-theme=atelier] .writing-room .page-heading { margin-bottom: 20px; }
+[data-theme=atelier] .writing-room #page-title { color: #332c23; font-size: 25px; letter-spacing: -.6px; }
+[data-theme=atelier] .writing-room #editor { color: #332c23; font-size: calc(var(--editor-size) - 4px); line-height: 1.85; min-height: 110px; caret-color: #652d24; }
+[data-theme=atelier] .writing-room #page-title::placeholder,
+[data-theme=atelier] .writing-room #editor::placeholder { color: #6c604e; }
+[data-theme=atelier] .writing-room .page-date { color: #6c604e; }
+[data-theme=atelier] .writing-room .paper-end { bottom: 13px; color: #5b4f3d; opacity: .6; font-size: 10px; letter-spacing: 1px; }
+[data-theme=atelier] .writing-room .return-key { left: calc(50% + 410px); bottom: 160px; }
+.paper-corner { display: none; }
+[data-theme=atelier] .paper-corner {
+  display: block; position: absolute; top: -3px; width: 30px; height: 28px; cursor: grab;
+  touch-action: none; color: #786b55; opacity: 0; transition: opacity .2s;
+}
+.paper-corner-left { left: -3px; }.paper-corner-right { right: -3px; }
+.paper-corner:active { cursor: grabbing; }
+.paper-corner::after { content: ''; position: absolute; width: 10px; height: 10px; top: 8px; border-top: 1px solid currentColor; }
+.paper-corner-left::after { left: 9px; border-left: 1px solid currentColor; }
+.paper-corner-right::after { right: 9px; border-right: 1px solid currentColor; }
+.page:hover .paper-corner, .paper-corner:focus-visible { opacity: .8; }
+[data-theme=atelier] .bottom-bar { background: linear-gradient(transparent, #302820e6 45%); }
+[data-theme=atelier] .theme-button { background: #3b3128; }
+[data-theme=atelier] .theme-swatch { background: #e9dfc8; }
+
+/* A fully editable fallback if WebGL is absent or its context is lost. */
+.machine-fallback { display: none; }
+[data-theme=atelier] .machine-fallback { display: block; }
+[data-theme=atelier] .writing-room:not(.has-3d-paper) .page { left: 50%; top: 55px; width: min(490px, 75vw); height: max(230px, calc(100% - 430px)); transform: translateX(-50%) !important; }
+[data-theme=atelier] .writing-room .machine-fallback { width: 690px; height: 260px; max-width: 93vw; bottom: 94px; perspective: 700px; background: linear-gradient(135deg, #40463d, #181e1a 65%); border: 7px solid #444b40; box-shadow: 0 20px 35px #0007, inset 0 2px #a7a895; }
+.machine-fallback::after { display: none; }
+.fallback-keys { position: absolute; inset: 65px 20px 18px; display: flex; flex-direction: column; gap: 9px; align-items: center; }
+.fallback-row { display: flex; gap: 10px; }
+.fallback-key { display: grid; place-items: center; width: 32px; height: 31px; border: 2px solid #a49e83; border-radius: 50%; background: linear-gradient(145deg, #42453b, #191d17); color: #e5dfc8; font: bold 14px Georgia, serif; box-shadow: 0 4px 0 #6e705f, 0 7px 3px #000b, inset 0 1px 1px #fff5; transition: transform .08s, box-shadow .08s; }
+.fallback-key:active { transform: translateY(4px); box-shadow: 0 1px 0 #6e705f, 0 2px 2px #000b; }
+.fallback-space { width: 290px; height: 23px; border-radius: 6px; color: transparent; }
+
+@media (min-width: 1800px) { [data-theme=atelier] .writing-room { min-height: calc(100svh - 100px); } }
+@media (max-width: 1100px) { [data-theme=atelier] .writing-room .return-key { left: auto; right: 18px; bottom: 140px; } }
+@media (max-width: 768px) {
+  [data-theme=atelier] .writing-room { min-height: max(660px, calc(100svh - 86px)); }
+  [data-theme=atelier] .writing-room .machine-stage { bottom: 76px; }
+  [data-theme=atelier] .writing-room .page-inner { padding: 29px 30px 43px; }
+  [data-theme=atelier] .writing-room .return-key { display: none; }
+  [data-theme=atelier] .writing-room .machine-fallback { height: 230px; }
+  .fallback-row { gap: 6px; }.fallback-key { width: 27px; height: 27px; }.fallback-space { width: 240px; height: 21px; }
+}
+@media (max-width: 520px) {
+  [data-theme=atelier] .writing-room { min-height: max(630px, calc(100svh - 80px)); }
+  [data-theme=atelier] .writing-room .machine-stage { width: 100%; bottom: 77px; }
+  [data-theme=atelier] .writing-room .page-inner { padding: 31px 25px 42px; }
+  [data-theme=atelier] .writing-room #page-title { font-size: 24px; }
+  [data-theme=atelier] .writing-room #editor { font-size: max(16px, calc(var(--editor-size) - 5px)); }
+  [data-theme=atelier] .writing-room .page-heading { margin-bottom: 20px; }
+  [data-theme=atelier] .writing-room .machine-fallback { height: 180px; bottom: 105px; }
+  [data-theme=atelier] .writing-room:not(.has-3d-paper) .page { height: calc(100% - 360px); width: calc(100% - 42px); }
+  .fallback-keys { inset: 52px 9px 12px; gap: 6px; }.fallback-row { gap: 5px; }.fallback-key { width: 21px; height: 20px; font-size: 10px; }.fallback-space { width: 180px; height: 15px; }
+}
+@media (max-height: 680px) and (min-width: 769px) {
+  [data-theme=atelier] .writing-room { min-height: 680px; }
+  [data-theme=atelier] .writing-room .machine-stage { width: 830px; max-width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) { .paper-corner { visibility: hidden; } }
+@media print {
+  [data-theme=atelier] .writing-room { min-height: 0; overflow: visible; }
+  [data-theme=atelier] .writing-room .page { position: static; width: 100% !important; height: auto !important; transform: none !important; background: #fff; box-shadow: none; }
+  [data-theme=atelier] .writing-room .page-inner { height: auto; overflow: visible; padding: 0; }
+  [data-theme=atelier] .writing-room #editor { color: #000; }
+  .paper-corner { display: none !important; }
+  .machine-fallback { display: none !important; }
+}

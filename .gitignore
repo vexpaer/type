@@ -3,3 +3,6 @@ dist/
 .openai/
 .taste-skill/
 *.local
+.npm-cache/
+.impeccable/
+.qa/

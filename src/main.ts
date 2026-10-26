@@ -1,4 +1,5 @@
 import './style.css';
+import './atelier.css';
 import { icon, mountIcons } from './icons';
 import { loadStore, newDraft, persistStore, type Draft } from './storage';
 import { getStats, safeFilename } from './stats.js';
@@ -20,6 +21,7 @@ let composing = false, focused = false;
 let pendingDelete: string | null = null;
 let deleteTimer = 0;
 let switching = false;
+let shiftLatched = false, capsLatched = false;
 const audio = new TypingAudio();
 audio.enabled = store.sound;
 
@@ -88,9 +90,57 @@ function mechanicalFeedback(key: string, returnKey = false) {
   const column = [...beforeCaret.slice(beforeCaret.lastIndexOf('\n') + 1)].length;
   machine?.strike(key, column, returnKey);
   audio.strike(store.theme === 'atelier', returnKey);
-  if (store.theme === 'atelier' && returnKey && !reducedMotion.matches) {
-    $('page').animate([{ translate: '0 3px' }, { translate: '0 0' }], { duration: 300, easing: 'cubic-bezier(.22,1,.36,1)' });
+}
+
+function insertMachineText(value: string, from = editor.selectionStart, end = editor.selectionEnd) {
+  editor.focus({ preventScroll: true }); editor.setSelectionRange(from, end);
+  if (audio.enabled) audio.activate();
+  // Keep click-to-type, carriage return, and physical typing in native undo history.
+  const inserted = document.execCommand(value === '' ? 'delete' : 'insertText', false, value);
+  if (!inserted) {
+    editor.setRangeText(value, from, end, 'end');
+    editor.dispatchEvent(new InputEvent('input', { inputType: value === '' ? 'deleteContentBackward' : 'insertText', data: value || null, bubbles: true }));
   }
+}
+
+// Mesh clicks enter through the same input pipeline as a physical/virtual keyboard.
+function typeFromMachine(key: string) {
+  if (key === 'enter') { $('return-key').click(); return; }
+  if (key === 'shift' || key === 'shift-right') { shiftLatched = !shiftLatched; machine?.strike(key, 0); return; }
+  if (key === 'capslock') { capsLatched = !capsLatched; machine?.strike(key, 0); return; }
+  const start = editor.selectionStart, end = editor.selectionEnd;
+  let value = key, from = start;
+  if (key === 'backspace') {
+    const previous = [...editor.value.slice(0, start)].at(-1)?.length || 0;
+    from = start === end ? Math.max(0, start - previous) : start; value = '';
+  } else {
+    if (shiftLatched && key.length === 1) {
+      const unshifted = '1234567890-;,./', shifted = '!@#$%^&*()_:<>?';
+      const index = unshifted.indexOf(key); value = index >= 0 ? shifted[index] : key.toUpperCase();
+    } else if (capsLatched) value = key.toUpperCase();
+    shiftLatched = false;
+  }
+  insertMachineText(value, from, end);
+}
+
+function showMachineFallback() {
+  machine?.dispose(); machine = null;
+  $('machine-stage').hidden = true; $('machine-fallback').hidden = false;
+  $('writing-room').classList.remove('has-3d-paper');
+  const fallback = $('machine-fallback');
+  if (fallback.querySelector('.fallback-keys')) return;
+  const keyboard = document.createElement('div'); keyboard.className = 'fallback-keys';
+  for (const letters of ['1234567890', 'QWERTYUIOP', 'ASDFGHJKL', 'ZXCVBNM', ' ']) {
+    const row = document.createElement('div'); row.className = 'fallback-row';
+    for (const letter of letters) {
+      const button = document.createElement('button'); button.className = `fallback-key${letter === ' ' ? ' fallback-space' : ''}`;
+      button.textContent = letter; button.setAttribute('aria-label', letter === ' ' ? 'Type a space' : `Type ${letter}`);
+      button.addEventListener('pointerdown', event => event.preventDefault());
+      button.addEventListener('click', () => typeFromMachine(letter.toLowerCase())); row.append(button);
+    }
+    keyboard.append(row);
+  }
+  fallback.append(keyboard);
 }
 editor.addEventListener('compositionstart', () => { composing = true; });
 editor.addEventListener('compositionend', () => { composing = false; mechanicalFeedback('j'); scheduleSave(); updateStats(); resizeEditor(true); });
@@ -99,14 +149,16 @@ editor.addEventListener('input', (event) => {
   updateStats(); resizeEditor(true); setWriting();
   if (!composing && !input.isComposing) {
     if (input.inputType !== 'insertFromPaste' && input.inputType !== 'insertFromDrop' && input.inputType !== 'historyUndo' && input.inputType !== 'historyRedo') {
-      const key = input.inputType.startsWith('delete') ? 'backspace' : input.data?.slice(-1) || (input.inputType === 'insertLineBreak' ? 'enter' : 'j');
-      mechanicalFeedback(key, input.inputType === 'insertLineBreak');
+      const returning = input.inputType === 'insertLineBreak' || input.data === '\n';
+      const key = input.inputType.startsWith('delete') ? 'backspace' : [...(input.data || '')].at(-1) || (returning ? 'enter' : '');
+      mechanicalFeedback(key, returning);
     }
     scheduleSave();
   }
 });
 editor.addEventListener('keydown', (event) => {
   if (audio.enabled && !composing && !event.ctrlKey && !event.metaKey) audio.activate();
+  if (!composing && (event.key === 'Shift' || event.key === 'CapsLock')) machine?.strike(event.key === 'CapsLock' ? 'capslock' : event.location === 2 ? 'shift-right' : 'shift', 0);
 });
 title.addEventListener('input', () => { scheduleSave(); setWriting(); });
 title.addEventListener('keydown', event => { if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); editor.focus(); } });
@@ -189,11 +241,11 @@ async function ensureMachine() {
   machineLoading = (async () => {
     try {
       const { Typewriter } = await import('./typewriter');
-      machine = new Typewriter($('machine-stage'), () => { $('machine-stage').hidden = true; $('machine-fallback').hidden = false; });
+      machine = new Typewriter($('machine-stage'), showMachineFallback, typeFromMachine);
       machine.setActive(store.theme === 'atelier');
     } catch (error) {
       console.warn('The 3D renderer is unavailable. The writing page remains usable.', error);
-      $('machine-stage').hidden = true; $('machine-fallback').hidden = false;
+      showMachineFallback();
     }
   })();
   return machineLoading;
@@ -274,8 +326,7 @@ function applyFontSize() {
 }
 $('font-decrease').addEventListener('click',()=>setFontSize(-1));$('font-increase').addEventListener('click',()=>setFontSize(1));
 $('return-key').addEventListener('click',()=> {
-  const start=editor.selectionStart,end=editor.selectionEnd;
-  editor.setRangeText('\n',start,end,'end');editor.dispatchEvent(new InputEvent('input',{inputType:'insertLineBreak',bubbles:true}));editor.focus({preventScroll:true});
+  insertMachineText('\n');
 });
 
 document.addEventListener('keydown',event=> {

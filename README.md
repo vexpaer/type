@@ -8,9 +8,9 @@ A quiet place to write. Two rooms, one page.
 
 | The quiet room | The writer’s atelier |
 | --- | --- |
-| ![Minimalist writing room](docs/screenshots/quiet-room.jpg) | ![Typewriter with software rendering](docs/screenshots/atelier.jpg) |
+| ![Minimalist writing room](docs/screenshots/quiet-room.jpg) | ![3D typewriter and paper in the writer’s atelier](docs/screenshots/atelier.jpg) |
 
-The atelier screenshot uses the software fallback; WebGL adds physically based lighting and shadows.
+The atelier screenshot was captured in WebGL-enabled Chromium using ANGLE SwiftShader. It shows the current 3D scene, including its lighting, shadows and paper mesh; it is not a hardware-GPU performance benchmark.
 
 ## Write
 
@@ -20,7 +20,7 @@ Open the page and start typing. The button in the bottom-right corner changes ro
 - Plain-text and Markdown import; UTF-8 text download and clipboard copy.
 - Live Unicode-aware word counts, character counts and reading time.
 - Focus mode, adjustable text size, optional synthesized key sounds and a carriage-return bell.
-- Native text editing, selection, undo, spellcheck and Chinese IME input.
+- Native text editing, selection, undo, spellcheck and IME composition support.
 - Responsive phone, tablet and desktop layouts, keyboard navigation and reduced-motion support.
 - Self-hosted fonts. No analytics, accounts, external assets or writing API.
 
@@ -60,12 +60,14 @@ The workflow runs the build and unit tests on pushes and pull requests. Every pu
 
 ### The typewriter
 
-`src/typewriter.ts` builds the object from meshes rather than loading a photograph or a remote model: enamel body, staggered metal-rimmed keys, levers, spools, two-tone ribbon, platen, paper bail, margin scale and return lever. WebGL uses physically based materials, environment lighting and shadows. Keys, hammer, spools and carriage respond to typing. Rendering pauses at rest and in background tabs; reduced-motion mode keeps the model still.
+`src/typewriter.ts` lazy-loads with the atelier and builds the scene from local meshes and procedural textures. The machine has an enamel body, shallow concave near-black keys with thin aged-nickel rims and ivory legends, a black space bar, individual type bars, spools, two-tone ribbon, platen, paper bail, margin scale and return lever. Keys, type bars, ribbon, spools, carriage and return lever respond to typing. Click the 3D keys or return lever to write into the same native editor.
 
-When WebGL2 is unavailable, Three.js’s software SVG renderer projects the same mesh scene. It renders geometry at rest and on resize; inexpensive vector key animations keep typing responsive. This fallback has simpler lighting, and does not animate the individual hammer or ribbon. If neither renderer can initialize, writing remains available with a CSS illustration.
+The paper is a deforming 40 × 56-segment mesh with a thin underside, visible edge and procedural fibre and bump textures. A damped, coupled bending model responds to typing, carriage returns and corner dragging. This is lightweight visual physics, not measured paper mechanics, finite-element analysis or a full rigid-body simulation. The native textarea stays over the paper’s central reading area, preserving normal editing and selection.
+
+WebGL uses physically based materials, environment lighting and shadows. Rendering pauses at rest and in background tabs; reduced-motion mode suppresses animated feedback and corner flexing. If WebGL cannot initialize or its context is lost, an editable paper surface and dimensional CSS keyboard remain available. There is no SVG scene renderer.
 
 ## Design and verification
 
-Art direction follows [Leonxlnx/taste-skill](https://github.com/leonxlnx/taste-skill), using its **Achromatic ledger** application direction. Parchment, typewriter lettering and physical light/shadow deliberately follow the requested vintage theme. See [the design and QA notes](docs/design-and-qa.md).
+The established **Achromatic ledger** direction from [Leonxlnx/taste-skill](https://github.com/leonxlnx/taste-skill) remains: a monochrome quiet room and a warm, tactile atelier. The latest refinement preserves that identity while rebuilding the machine and paper. See [the design system](DESIGN.md) and [the dated design and QA notes](docs/design-and-qa.md) for current evidence and verification limits.
 
 Fonts: DM Sans, Lora and Special Elite, distributed under the SIL Open Font License; their licenses ship in `public/licenses/`. The model, interface and procedural sound effects are original code. No stock photographs or external 3D assets are used.
