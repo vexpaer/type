@@ -62,13 +62,13 @@ function resizeEditor(followCaret = false) {
   pageInner.scrollTop = previousScroll;
   if (followCaret) requestAnimationFrame(keepCaretVisible);
 }
-function measureCaret() {
+function measureCaret(text = editor.value, caret = editor.selectionStart) {
   // Native wrapping, CJK width and text size all contribute to the visual column.
   const mirror = document.createElement('div');
   const computed = getComputedStyle(editor);
   for (const property of ['font-family', 'font-size', 'font-weight', 'line-height', 'letter-spacing', 'padding', 'border', 'box-sizing', 'tab-size', 'word-spacing']) mirror.style.setProperty(property, computed.getPropertyValue(property));
   Object.assign(mirror.style, { position: 'absolute', visibility: 'hidden', pointerEvents: 'none', width: `${editor.clientWidth}px`, whiteSpace: 'pre-wrap', overflowWrap: 'break-word', top: '0', left: '0' });
-  mirror.textContent = editor.value.slice(0, editor.selectionStart);
+  mirror.textContent = text.slice(0, caret);
   const marker = document.createElement('span'); marker.textContent = '\u200b'; mirror.append(marker); $('editor-wrap').append(mirror);
   const lineHeight = parseFloat(computed.lineHeight);
   const localTop = marker.offsetTop, localLeft = marker.offsetLeft;
@@ -118,7 +118,11 @@ function flushImpressions() {
 }
 function queueImpression(value: string) {
   if (audio.enabled) audio.activate();
-  machine?.strike(value, measureCaret().layout);
+  // Predict the current print column including characters still in flight.
+  // Fast typists can have several typebars airborne before the first ink lands.
+  const inFlight = impressions.map(impression => impression.value).join('');
+  const predicted = editor.value.slice(0, editor.selectionStart) + inFlight + editor.value.slice(editor.selectionEnd);
+  machine?.strike(value, measureCaret(predicted, editor.selectionStart + inFlight.length).layout);
   audio.strike(true, false, IMPACT_MS / 1000);
   const impression: Impression = { value, timer: 0 };
   impressions.push(impression);
