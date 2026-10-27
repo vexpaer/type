@@ -5,7 +5,7 @@ import { loadStore, newDraft, persistStore, type Draft } from './storage';
 import { getStats, safeFilename } from './stats.js';
 import { TypingAudio } from './audio';
 import type { Typewriter, CaretLayout } from './typewriter';
-import { IMPACT_MS } from './mechanics.js';
+import { IMPACT_MS, forecastTyping } from './mechanics.js';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const editor = $<HTMLTextAreaElement>('editor');
@@ -121,8 +121,8 @@ function queueImpression(value: string) {
   // Predict the current print column including characters still in flight.
   // Fast typists can have several typebars airborne before the first ink lands.
   const inFlight = impressions.map(impression => impression.value).join('');
-  const predicted = editor.value.slice(0, editor.selectionStart) + inFlight + editor.value.slice(editor.selectionEnd);
-  machine?.strike(value, measureCaret(predicted, editor.selectionStart + inFlight.length).layout);
+  const projected = forecastTyping(editor.value, editor.selectionStart, editor.selectionEnd, inFlight);
+  machine?.strike(value, measureCaret(projected.text, projected.caret).layout);
   audio.strike(true, false, IMPACT_MS / 1000);
   const impression: Impression = { value, timer: 0 };
   impressions.push(impression);
@@ -142,6 +142,7 @@ function insertMachineText(value: string, from = editor.selectionStart, end = ed
 
 // Mesh clicks enter through the same input pipeline as a physical/virtual keyboard.
 function typeFromMachine(key: string) {
+  if (key === 'backspace') flushImpressions();
   if (key === 'enter') { $('return-key').click(); return; }
   if (key === 'shift' || key === 'shift-right') { shiftLatched = !shiftLatched; machine?.strike(key); return; }
   if (key === 'capslock') { capsLatched = !capsLatched; machine?.strike(key); return; }
