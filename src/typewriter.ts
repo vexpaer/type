@@ -158,7 +158,7 @@ export class Typewriter {
   }
   syncCaret(caret: CaretLayout) {
     // The bell sounds when the active line enters the right-hand margin, not on Enter.
-    if (this.active && caret.line === this.lastCaret.line && this.lastCaret.progress < .86 && caret.progress >= .86) {
+    if (this.active && performance.now() - this.lastStrikeAt < 220 && caret.line === this.lastCaret.line && this.lastCaret.progress < .86 && caret.progress >= .86) {
       this.bellAt = performance.now(); this.onBell?.();
     }
     this.lastCaret = caret;
