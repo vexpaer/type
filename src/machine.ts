@@ -5,7 +5,7 @@ import { enamelSurface, keyLegendAtlas, contactShadow } from './materials';
 import { typebarPose } from './mechanics.js';
 
 export type MovingBar = { group: THREE.Group; rest: THREE.Quaternion; raised: THREE.Quaternion; strokes: number[] };
-export type MovingKey = { group: THREE.Group; rest: number; value: string; bar: MovingBar | null; strokes: number[]; spring: { position: number; velocity: number } };
+export type MovingKey = { group: THREE.Group; rest: number; value: string; bar: MovingBar | null; lever?: THREE.Group; strokes: number[]; spring: { position: number; velocity: number } };
 type Material = THREE.MeshStandardMaterial;
 
 /** A continuous cast shell, a recessed keyboard, and individually hinged type bars. */
@@ -100,7 +100,15 @@ export function buildMachine(own: <T extends THREE.Texture>(texture: T) => T) {
   const makeKey = (text: string, value: string, x: number, y: number, z: number, sub = '', redKey = false) => {
     const group = new THREE.Group(); group.position.set(x, y, z); machine.add(group);
     const hasBar = value.length === 1;
-    const key: MovingKey = { group, rest: y, value, bar: hasBar ? bars[barIndex++] : null, strokes: [], spring: { position: 0, velocity: 0 } };
+    // Each printable key drives an exposed rearward lever under the recessed bed.
+    const lever = hasBar ? new THREE.Group() : undefined;
+    if (lever) {
+      lever.position.set(x, y - .245, z - .12); machine.add(lever);
+      rod(new THREE.Vector3(0, 0, .06), new THREE.Vector3(0, -.045, -.48), .012, steel, lever);
+      cylinder(.028, .065, brass, 0, 0, .05, lever, 10);
+      box(.09, .025, .11, nickel, 0, -.05, -.46, .006, lever);
+    }
+    const key: MovingKey = { group, rest: y, value, bar: hasBar ? bars[barIndex++] : null, lever, strokes: [], spring: { position: 0, velocity: 0 } };
     keys.set(value, key); ordered.push(key); legends.push({ text, sub }); colors.push(new THREE.Color(redKey ? 0x5a2823 : 0x101713));
   };
   const rows = [
@@ -110,6 +118,21 @@ export function buildMachine(own: <T extends THREE.Texture>(texture: T) => T) {
     { letters: 'ZXCVBNM,./', subs: '', z: 1.67, y: .68, offset: .19 },
   ];
   for (const row of rows) [...row.letters].forEach((letter, i) => makeKey(letter, letter.toLowerCase(), (i - (row.letters.length - 1) / 2) * .535 + row.offset, row.y, row.z, row.subs[i] || ''));
+  // Etched character faces share one texture atlas; each typebar carries its own slug.
+  const slugCanvas = document.createElement('canvas'); slugCanvas.width = 1024; slugCanvas.height = 768;
+  const slugCtx = slugCanvas.getContext('2d')!;
+  slugCtx.clearRect(0, 0, slugCanvas.width, slugCanvas.height);
+  slugCtx.textAlign = 'center'; slugCtx.textBaseline = 'middle'; slugCtx.font = 'bold 87px Georgia'; slugCtx.fillStyle = '#d6d7ce';
+  ordered.forEach((key, i) => slugCtx.fillText(key.value.toUpperCase(), (i % 8 + .5) * 128, (Math.floor(i / 8) + .51) * 128));
+  const slugTexture = own(new THREE.CanvasTexture(slugCanvas)); slugTexture.colorSpace = THREE.SRGBColorSpace;
+  const slugMaterial = new THREE.MeshStandardMaterial({ map: slugTexture, transparent: true, depthWrite: false, roughness: .66, metalness: .33, side: THREE.DoubleSide });
+  ordered.forEach((key, i) => {
+    if (!key.bar) return;
+    const geometry = new THREE.PlaneGeometry(.047, .048);
+    const uv = geometry.getAttribute('uv') as THREE.BufferAttribute;
+    for (let j = 0; j < uv.count; j++) uv.setXY(j, (i % 8 + uv.getX(j)) / 8, 1 - (Math.floor(i / 8) + 1 - uv.getY(j)) / 6);
+    const face = new THREE.Mesh(geometry, slugMaterial); face.position.set(0, typebarPose(i).length - .044, .031); key.bar.group.add(face);
+  });
   makeKey('SHIFT', 'shift', -2.97, .68, 1.67); makeKey('SHIFT', 'shift-right', 3.08, .68, 1.67);
   makeKey('BACK', 'backspace', 3.05, 1.01, .05, '', true); makeKey('LOCK', 'capslock', -3.01, .9, .59, '', true);
   const cap = new THREE.LatheGeometry([new THREE.Vector2(.025, -.23), new THREE.Vector2(.025, -.04), new THREE.Vector2(.178, -.04), new THREE.Vector2(.197, -.016), new THREE.Vector2(.197, .025), new THREE.Vector2(.182, .03)], 32);
