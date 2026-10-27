@@ -54,3 +54,10 @@ export function quadMatrix(width, height, points) {
     (p3.x - p0.x + h * p3.x) / height, (p3.y - p0.y + h * p3.y) / height, 0, h / height,
     0, 0, 1, 0, p0.x, p0.y, 0, 1];
 }
+
+/** Project the column of a queued mechanical strike without mutating the native editor. */
+export function forecastTyping(text, start, end, pending) {
+  const from = Math.max(0, Math.min(text.length, start));
+  const to = Math.max(from, Math.min(text.length, end));
+  return { text: text.slice(0, from) + pending + text.slice(to), caret: from + pending.length };
+}
