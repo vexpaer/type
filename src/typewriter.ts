@@ -211,6 +211,7 @@ export class Typewriter {
       const depression = this.reduced.matches ? 0 : advanceKey(key.spring, overlappingStroke(key.strokes, now) * .105, dt);
       if (this.reduced.matches) key.spring.position = key.spring.velocity = 0;
       key.group.position.y = key.rest - depression + (this.hovered === key && !this.reduced.matches ? .008 : 0); key.group.rotation.x = depression * -.2;
+      if (key.lever) key.lever.rotation.x = -depression * 1.6;
     }
     for (const bar of a.bars) {
       bar.strokes = bar.strokes.filter(time => now - time < 180);
