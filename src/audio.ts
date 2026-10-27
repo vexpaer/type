@@ -26,7 +26,7 @@ export class TypingAudio {
       const oscillator = ctx.createOscillator(), body = ctx.createGain(); oscillator.type = 'triangle'; oscillator.frequency.setValueAtTime(returnKey ? 140 : 190 + Math.random() * 50, now); oscillator.frequency.exponentialRampToValueAtTime(65, now + .045);
       body.gain.setValueAtTime(.16, now); body.gain.exponentialRampToValueAtTime(.001, now + .09); oscillator.connect(body); body.connect(this.master!); oscillator.start(now); oscillator.stop(now + .1);
     }
-    if (retro && returnKey) this.bell(delay);
+    // The margin bell belongs to the escapement threshold, not the Enter key.
   }
   bell(delay = 0) {
     if (!this.enabled || !this.context) return;
