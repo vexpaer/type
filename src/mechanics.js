@@ -1,5 +1,7 @@
 /** Mechanical timing is independent of text insertion and can overlap at typing speed. */
 export const IMPACT_MS = 58;
+// Contact is on the tangent-wrapped sheet, just behind the raised ink ribbon.
+export const STRIKE_TARGET = Object.freeze([0, 2.038, -1.556]);
 const clamp = (n, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, n));
 const smooth = n => { const t = clamp(n); return t * t * (3 - 2 * t); };
 
