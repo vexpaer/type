@@ -32,7 +32,7 @@ export function advanceKey(state, target, dt) {
 export function typebarPose(index, count = 44) {
   const angle = (index / Math.max(1, count - 1) - .5) * 2.42;
   const pivot = [Math.sin(angle) * 1.48, .99, -1.38 + Math.cos(angle) * 1.23];
-  const target = [0, 2.035, -1.535];
+  const target = [...STRIKE_TARGET];
   const delta = target.map((n, i) => n - pivot[i]);
   const length = Math.hypot(...delta);
   const horizontal = Math.hypot(delta[0], delta[2]);
