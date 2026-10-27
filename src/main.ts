@@ -76,8 +76,21 @@ function measureCaret(text = editor.value, caret = editor.selectionStart) {
   mirror.remove();
   return { caretTop, localTop, lineHeight, layout: { progress: Math.max(0, Math.min(1, localLeft / Math.max(1, editor.clientWidth))), line: Math.round(localTop / lineHeight) } satisfies CaretLayout };
 }
+/** Keep the active line at the platen while earlier text advances upward on returns.
+ * This affects only the 3D atelier; the textarea itself still owns selection/undo.
+ */
+function syncPrintLine() {
+  const wrap = $('editor-wrap');
+  if (store.theme !== 'atelier' || !machine) { wrap.style.removeProperty('--type-feed-offset'); return; }
+  const pageInner = document.querySelector<HTMLElement>('.page-inner')!;
+  const { localTop, lineHeight } = measureCaret();
+  const printTop = pageInner.clientHeight - lineHeight * 1.08;
+  const offset = printTop - (wrap.offsetTop + localTop - pageInner.scrollTop);
+  wrap.style.setProperty('--type-feed-offset', `${offset.toFixed(2)}px`);
+}
 function keepCaretVisible() {
   if (document.activeElement !== editor) return;
+  if (store.theme === 'atelier' && machine) { syncPrintLine(); return; }
   const { caretTop, lineHeight } = measureCaret();
   if (store.theme === 'atelier') {
     const scroller = document.querySelector<HTMLElement>('.page-inner')!, rect = scroller.getBoundingClientRect();
@@ -214,7 +227,7 @@ editor.addEventListener('keydown', (event) => {
   if (audio.enabled && !composing && !event.ctrlKey && !event.metaKey) audio.activate();
   if (!composing && (event.key === 'Shift' || event.key === 'CapsLock')) machine?.strike(event.key === 'CapsLock' ? 'capslock' : event.location === 2 ? 'shift-right' : 'shift');
 });
-const syncCaret = () => { if (!composing && store.theme === 'atelier') machine?.syncCaret(measureCaret().layout); };
+const syncCaret = () => { if (!composing && store.theme === 'atelier') { syncPrintLine(); machine?.syncCaret(measureCaret().layout); } };
 editor.addEventListener('click', syncCaret);
 editor.addEventListener('select', syncCaret);
 editor.addEventListener('keyup', event => { if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key)) syncCaret(); });
@@ -229,7 +242,7 @@ function loadDraft(id: string) {
   $('page-date').textContent = date.toLocaleDateString('en', { month: 'long', day: 'numeric', year: 'numeric' });
   document.title = `${draft.title.trim() || 'Untitled'} — type.`;
   updateStats(); resizeEditor();
-  if (machine) machine.syncCaret(measureCaret().layout);
+  if (machine) { machine.syncCaret(measureCaret().layout); requestAnimationFrame(syncPrintLine); }
   document.querySelector<HTMLElement>('.page-inner')!.scrollTop = 0;
   window.scrollTo({ top: 0, behavior: 'instant' });
 }
@@ -295,7 +308,7 @@ function syncThemeUI() {
   document.querySelectorAll<HTMLButtonElement>('[data-theme-choice]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.themeChoice === store.theme)));
   machine?.setActive(retro);
   resizeEditor();
-  if (retro) requestAnimationFrame(syncCaret);
+  if (retro) requestAnimationFrame(syncCaret); else syncPrintLine();
 }
 async function ensureMachine() {
   if (machine || machineLoading) return machineLoading;
