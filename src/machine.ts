@@ -1,210 +1,238 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { enamelSurface, labelTexture } from './materials';
+import { enamelSurface, keyLegendAtlas, contactShadow } from './materials';
+import { typebarPose } from './mechanics.js';
 
-export type MovingKey = { group: THREE.Group; rest: number; pressedAt: number; bar: THREE.Group | null; value: string };
+export type MovingBar = { group: THREE.Group; rest: THREE.Quaternion; raised: THREE.Quaternion; strokes: number[] };
+export type MovingKey = { group: THREE.Group; rest: number; value: string; bar: MovingBar | null; strokes: number[]; spring: { position: number; velocity: number } };
 type Material = THREE.MeshStandardMaterial;
 
-/** Original Continental-inspired geometry; all structural details are real meshes. */
+/** A continuous cast shell, a recessed keyboard, and individually hinged type bars. */
 export function buildMachine(own: <T extends THREE.Texture>(texture: T) => T) {
   const machine = new THREE.Group(), carriage = new THREE.Group(), lever = new THREE.Group(), ribbonLift = new THREE.Group();
-  const keys = new Map<string, MovingKey>(), targets: THREE.Object3D[] = [], spools: THREE.Group[] = [], rollers: THREE.Mesh[] = [];
+  const keys = new Map<string, MovingKey>(), targets: THREE.Object3D[] = [], bars: MovingBar[] = [];
+  const spools: THREE.Group[] = [], rollers: THREE.Object3D[] = [];
   const grain = own(enamelSurface());
-  const enamel = new THREE.MeshStandardMaterial({ color: 0x242d29, metalness: .65, roughness: .49, bumpMap: grain, bumpScale: .025, roughnessMap: grain });
-  const edge = new THREE.MeshStandardMaterial({ color: 0x252e28, metalness: .58, roughness: .48 });
-  const black = new THREE.MeshStandardMaterial({ color: 0x131715, roughness: .54, metalness: .35 });
-  const chrome = new THREE.MeshStandardMaterial({ color: 0xb9b8a9, metalness: .96, roughness: .22 });
-  const brass = new THREE.MeshStandardMaterial({ color: 0xb7a271, metalness: .85, roughness: .31 });
-  const rubber = new THREE.MeshStandardMaterial({ color: 0x171917, roughness: .94, bumpMap: grain, bumpScale: .013 });
-  const felt = new THREE.MeshStandardMaterial({ color: 0x090f0c, roughness: 1, bumpMap: grain, bumpScale: .045 });
-  const keyMetal = new THREE.MeshStandardMaterial({ color: 0x555b52, metalness: .76, roughness: .43, bumpMap: grain, bumpScale: .005 });
-  const nickel = new THREE.MeshStandardMaterial({ color: 0xa29f8d, metalness: .88, roughness: .34 });
-  const keyBlack = new THREE.MeshPhysicalMaterial({ color: 0x101712, roughness: .58, metalness: .05, clearcoat: .18, clearcoatRoughness: .43 });
-  const keyRed = new THREE.MeshPhysicalMaterial({ color: 0x602b26, roughness: .64, metalness: .03, clearcoat: .12, clearcoatRoughness: .5 });
-  const red = new THREE.MeshStandardMaterial({ color: 0x77332c, roughness: .66, metalness: .12 });
-  const ribbon = new THREE.MeshStandardMaterial({ color: 0x171416, roughness: 1 });
+  const enamel = new THREE.MeshPhysicalMaterial({ color: 0x17201d, metalness: .08, roughness: .36, clearcoat: .38, clearcoatRoughness: .29, bumpMap: grain, bumpScale: .006 });
+  const edge = new THREE.MeshStandardMaterial({ color: 0x19201c, metalness: .12, roughness: .48 });
+  const black = new THREE.MeshStandardMaterial({ color: 0x101311, roughness: .49, metalness: .08 });
+  const chrome = new THREE.MeshStandardMaterial({ color: 0x9c9f97, metalness: .95, roughness: .28 });
+  const steel = new THREE.MeshStandardMaterial({ color: 0x3c423e, metalness: .83, roughness: .4 });
+  const brass = new THREE.MeshStandardMaterial({ color: 0x8a7851, metalness: .8, roughness: .43 });
+  const rubber = new THREE.MeshStandardMaterial({ color: 0x171816, roughness: .92, bumpMap: grain, bumpScale: .006 });
+  const felt = new THREE.MeshStandardMaterial({ color: 0x080b09, roughness: 1 });
+  const nickel = new THREE.MeshStandardMaterial({ color: 0x96998b, metalness: .88, roughness: .39 });
+  const keyBlack = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: .49, metalness: .03 });
+  const red = new THREE.MeshStandardMaterial({ color: 0x6c3028, roughness: .62, metalness: .04 });
+  const ribbon = new THREE.MeshStandardMaterial({ color: 0x171315, roughness: 1 });
   const box = (w: number, h: number, d: number, mat: Material, x = 0, y = 0, z = 0, radius = .035, parent: THREE.Object3D = machine) => {
     const m = new THREE.Mesh(new RoundedBoxGeometry(w, h, d, 2, Math.min(radius, w / 2, h / 2, d / 2)), mat);
     m.position.set(x, y, z); m.castShadow = m.receiveShadow = true; parent.add(m); return m;
   };
-  const cylinder = (r: number, h: number, mat: Material, x: number, y: number, z: number, parent: THREE.Object3D = machine, segments = 32) => {
-    const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, segments), mat); m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true; parent.add(m); return m;
+  const cylinder = (r: number, h: number, mat: Material, x: number, y: number, z: number, parent: THREE.Object3D = machine, segments = 24) => {
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, segments), mat); m.position.set(x, y, z); m.castShadow = m.receiveShadow = true; parent.add(m); return m;
   };
   const rod = (a: THREE.Vector3, b: THREE.Vector3, r: number, mat: Material, parent: THREE.Object3D = machine) => {
     const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, a.distanceTo(b), 8), mat);
-    m.position.copy(a).add(b).multiplyScalar(.5); m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize()); parent.add(m); return m;
+    m.position.copy(a).add(b).multiplyScalar(.5); m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
+    m.castShadow = m.receiveShadow = true; parent.add(m); return m;
   };
   const ring = (r: number, tube: number, mat: Material, x: number, y: number, z: number, parent: THREE.Object3D = machine) => {
-    const m = new THREE.Mesh(new THREE.TorusGeometry(r, tube, 8, 40), mat); m.rotation.x = -Math.PI / 2; m.position.set(x, y, z); parent.add(m); return m;
+    const m = new THREE.Mesh(new THREE.TorusGeometry(r, tube, 6, 32), mat); m.rotation.x = -Math.PI / 2; m.position.set(x, y, z); parent.add(m); return m;
   };
   const screw = (x: number, y: number, z: number, parent: THREE.Object3D = machine) => {
-    cylinder(.046, .022, chrome, x, y, z, parent, 12); box(.055, .004, .009, black, x, y + .013, z, .002, parent);
+    cylinder(.038, .016, steel, x, y, z, parent, 12); box(.048, .003, .008, black, x, y + .01, z, .001, parent);
   };
-  const label = (text: string, width: number, height: number, x: number, y: number, z: number, parent: THREE.Object3D = machine, color = '#d9c99f', font = 'bold 60px Georgia') => {
+  const label = (text: string, width: number, height: number, x: number, y: number, z: number, parent: THREE.Object3D = machine, color = '#c9c1a8', font = '500 90px Georgia') => {
     const canvas = document.createElement('canvas'); canvas.width = 1024; canvas.height = 256;
-    const ctx = canvas.getContext('2d')!; ctx.font = font; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = color; ctx.fillText(text, 512, 133);
+    const ctx = canvas.getContext('2d')!; ctx.font = font; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = color; ctx.fillText(text, 512, 130);
     const texture = own(new THREE.CanvasTexture(canvas)); texture.colorSpace = THREE.SRGBColorSpace;
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(width, height), new THREE.MeshStandardMaterial({ map: texture, transparent: true, roughness: .6, metalness: .25, depthWrite: false }));
-    m.rotation.x = -Math.PI / 2; m.position.set(x, y, z); parent.add(m); return m;
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(width, height), new THREE.MeshStandardMaterial({ map: texture, transparent: true, roughness: .7, depthWrite: false }));
+    m.position.set(x, y, z); parent.add(m); return m;
   };
 
-  // Cast base, rolled perimeter, feet and a recessed felt bed under the key comb.
-  for (const x of [-2.95, 2.95]) for (const z of [-1.75, 2.0]) { cylinder(.28, .22, rubber, x, -.015, z); cylinder(.22, .075, edge, x, .12, z); }
-  box(7.55, .28, 5.35, black, 0, .2, .12, .16);
-  box(7.45, .28, 5.22, edge, 0, .34, .1, .16);
-  box(7.32, .22, 5.12, enamel, 0, .47, .1, .14);
-  box(6.55, .1, 3.73, felt, 0, .54, .61, .05);
-  box(6.95, .18, .28, enamel, 0, .6, 2.59, .075);
-  // Rounded, profile-extruded cheeks rise around the exposed mechanism.
+  // One broad foundation with continuous, swept side cheeks and a rolled front apron.
+  for (const x of [-2.96, 2.96]) for (const z of [-1.77, 1.98]) cylinder(.23, .17, rubber, x, -.025, z);
+  box(7.38, .36, 5.1, enamel, 0, .23, .12, .17);
   const profile = new THREE.Shape();
-  profile.moveTo(-2.25, .5); profile.lineTo(-2.25, 1.35); profile.quadraticCurveTo(-2.2, 1.61, -1.85, 1.62);
-  profile.lineTo(-.65, 1.42); profile.quadraticCurveTo(-.3, 1.35, -.1, 1.12); profile.lineTo(2.38, .74);
-  profile.quadraticCurveTo(2.6, .71, 2.6, .52); profile.closePath();
-  const cheekGeometry = new THREE.ExtrudeGeometry(profile, { depth: .36, bevelEnabled: true, bevelThickness: .075, bevelSize: .075, bevelSegments: 3, steps: 1, curveSegments: 16 });
-  for (const x of [-3.52, 3.16]) {
-    const cheek = new THREE.Mesh(cheekGeometry, enamel); cheek.rotation.y = -Math.PI / 2; cheek.position.x = x + .36;
-    cheek.castShadow = cheek.receiveShadow = true; machine.add(cheek);
-  }
-  box(6.85, .73, .76, enamel, 0, 1.11, -1.85, .13);
-  box(6.35, .11, .3, edge, 0, 1.49, -2.0, .045);
+  profile.moveTo(-2.22, .32); profile.lineTo(-2.22, 1.28);
+  profile.bezierCurveTo(-2.22, 1.59, -2.06, 1.65, -1.76, 1.61);
+  profile.bezierCurveTo(-1.08, 1.56, -.75, 1.3, -.34, 1.02);
+  profile.bezierCurveTo(.42, .68, 1.56, .55, 2.25, .51);
+  profile.quadraticCurveTo(2.56, .49, 2.53, .29); profile.closePath();
+  const cheekGeometry = new THREE.ExtrudeGeometry(profile, { depth: .3, bevelEnabled: true, bevelThickness: .105, bevelSize: .105, bevelSegments: 5, curveSegments: 28, steps: 1 });
   for (const side of [-1, 1]) {
-    const hood = box(1.34, .29, 1.66, enamel, side * 2.54, 1.31, -1.02, .15); hood.rotation.x = .12;
-    box(.68, .025, .4, black, side * 2.65, 1.481, -.38, .06);
-    label('type.', .62, .28, side * 2.65, 1.501, -.38, machine, '#cec4a4', 'italic bold 115px Georgia');
-    screw(side * 3.2, 1.48, -1.3); screw(side * 3.2, .92, 1.14);
+    const cheek = new THREE.Mesh(cheekGeometry, enamel); cheek.rotation.y = side * Math.PI / 2;
+    cheek.scale.x = -side; cheek.position.x = side * 3.24; cheek.castShadow = cheek.receiveShadow = true; machine.add(cheek);
   }
-  // Horseshoe segment, pivot comb and separate steel type bars.
-  for (let i = 0; i < 47; i++) {
-    const angle = (i / 46 - .5) * 2.42, x = Math.sin(angle) * 1.85, z = -1.68 + Math.cos(angle) * 1.25;
-    rod(new THREE.Vector3(x, 1.25, z), new THREE.Vector3(x * 1.12, 1.02, z + .18), .028, brass);
-    box(.032, .13, .15, chrome, x, 1.29, z, .006);
+  const apron = box(6.67, .31, .28, enamel, 0, .43, 2.52, .115); apron.rotation.x = -.12;
+  box(6.55, .025, .035, edge, 0, .33, 2.673, .012);
+  const bed = box(6.43, .075, 3.12, felt, 0, .58, .81, .03); bed.rotation.x = .2;
+  box(6.62, .56, .58, enamel, 0, 1.2, -1.95, .16);
+  for (const side of [-1, 1]) {
+    const hood = box(1.18, .28, 1.38, enamel, side * 2.55, 1.29, -1.05, .13); hood.rotation.x = .08;
+    screw(side * 3.17, 1.46, -1.3); screw(side * 3.2, .67, 1.48);
   }
-  const bars: THREE.Group[] = [];
-  for (let i = 0; i < 45; i++) {
-    const angle = (i / 44 - .5) * 2.3, x = Math.sin(angle) * 1.78, z = -1.68 + Math.cos(angle) * 1.15;
-    const pivot = new THREE.Group(); pivot.position.set(0, 1.68, -1.72);
-    rod(new THREE.Vector3(x, -.39, z + 1.72), new THREE.Vector3(x * .11, -.02, .1), .018, chrome, pivot);
-    box(.066, .09, .12, edge, x, -.36, z + 1.72, .009, pivot);
-    machine.add(pivot); bars.push(pivot);
+  const badge = label('type.', 1.0, .25, 0, .45, 2.682, machine, '#b8ae91', 'italic 125px Georgia'); badge.rotation.x = -.12;
+
+  // Dark segment recesses put the resting type bars inside the instrument.
+  const basket = new THREE.Shape(); basket.absarc(0, 0, 1.74, .1, Math.PI - .1, false);
+  basket.lineTo(-1.4, .02); basket.absarc(0, 0, 1.4, Math.PI - .1, .1, true); basket.closePath();
+  const basketMesh = new THREE.Mesh(new THREE.ExtrudeGeometry(basket, { depth: .14, bevelEnabled: true, bevelSize: .025, bevelThickness: .025, bevelSegments: 2, curveSegments: 44 }), black);
+  basketMesh.rotation.x = -Math.PI / 2; basketMesh.position.set(0, .95, -1.38); basketMesh.castShadow = basketMesh.receiveShadow = true; machine.add(basketMesh);
+  for (let i = 0; i < 44; i++) {
+    const pose = typebarPose(i), pivot = new THREE.Group(); pivot.position.fromArray(pose.pivot);
+    const rest = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3().fromArray(pose.resting).normalize());
+    const raised = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3().fromArray(pose.raised));
+    pivot.quaternion.copy(rest); machine.add(pivot);
+    box(.025, pose.length - .08, .024, steel, 0, (pose.length - .08) / 2, 0, .006, pivot);
+    box(.064, .08, .052, steel, 0, pose.length - .04, 0, .008, pivot);
+    cylinder(.036, .075, brass, pose.pivot[0], pose.pivot[1] - .04, pose.pivot[2], machine, 10);
+    bars.push({ group: pivot, rest, raised, strokes: [] });
   }
-  // Thin nickel-ring keys, with an actual shallow concave face. Return springs live
-  // below the keyboard bed, as on the reference; only the slender steel stems show.
-  const capGeometry = new THREE.LatheGeometry([new THREE.Vector2(.035, -.031), new THREE.Vector2(.165, -.029), new THREE.Vector2(.196, -.018), new THREE.Vector2(.205, .005), new THREE.Vector2(.202, .027), new THREE.Vector2(.188, .031)], 40);
-  const faceGeometry = new THREE.LatheGeometry([new THREE.Vector2(0, .018), new THREE.Vector2(.07, .018), new THREE.Vector2(.14, .021), new THREE.Vector2(.176, .028), new THREE.Vector2(.188, .033)].reverse(), 40);
-  const legendGeometry = new THREE.CircleGeometry(.177, 40), rimGeometry = new THREE.TorusGeometry(.196, .0105, 8, 40);
-  const stemGeometry = new THREE.CylinderGeometry(.025, .031, .27, 10);
-  const metalPieces = [stemGeometry.clone().translate(0, -.16, 0), capGeometry.clone()];
-  const metalGeometry = mergeGeometries(metalPieces.map(g => g.toNonIndexed()))!;
-  metalPieces.forEach(g => g.dispose()); stemGeometry.dispose(); capGeometry.dispose();
-  let keyIndex = 0;
+
+  // Thin, shallow keys. Shared instanced meshes keep each key's transform and hit target.
+  const ordered: MovingKey[] = [], legends: { text: string; sub: string }[] = [], colors: THREE.Color[] = [];
+  let barIndex = 0;
   const makeKey = (text: string, value: string, x: number, y: number, z: number, sub = '', redKey = false) => {
     const group = new THREE.Group(); group.position.set(x, y, z); machine.add(group);
-    if (value === 'shift' || value === 'shift-right') group.scale.set(1.12, 1, 1.12);
-    const cap = new THREE.Mesh(metalGeometry, keyMetal); cap.castShadow = true; group.add(cap);
-    const rim = new THREE.Mesh(rimGeometry, nickel); rim.rotation.x = -Math.PI / 2; rim.position.y = .033; group.add(rim);
-    const inset = new THREE.Mesh(faceGeometry, redKey ? keyRed : keyBlack); inset.receiveShadow = true; group.add(inset);
-    const map = own(labelTexture(text, sub, !redKey));
-    const face = new THREE.Mesh(legendGeometry, new THREE.MeshStandardMaterial({ map, transparent: true, roughness: .85, metalness: 0, depthWrite: false }));
-    face.rotation.x = -Math.PI / 2; face.position.y = .037; group.add(face);
-    const key: MovingKey = { group, rest: y, pressedAt: -10000, bar: bars[keyIndex++ % bars.length], value };
-    inset.userData.key = key; cap.userData.key = key; targets.push(inset, cap); keys.set(value, key);
-    rod(new THREE.Vector3(x, y - .25, z), new THREE.Vector3(x * .84, .68, -.45), .022, edge);
+    const hasBar = value.length === 1;
+    const key: MovingKey = { group, rest: y, value, bar: hasBar ? bars[barIndex++] : null, strokes: [], spring: { position: 0, velocity: 0 } };
+    keys.set(value, key); ordered.push(key); legends.push({ text, sub }); colors.push(new THREE.Color(redKey ? 0x5a2823 : 0x101713));
   };
   const rows = [
-    { letters: '1234567890-', subs: '!@#$%^&*()_', z: -.04, y: 1.19, offset: -.14 },
-    { letters: 'QWERTYUIOP', subs: '', z: .56, y: 1.06, offset: -.13 },
-    { letters: 'ASDFGHJKL;', subs: '', z: 1.16, y: .92, offset: .03 },
-    { letters: 'ZXCVBNM,./', subs: '', z: 1.76, y: .79, offset: .19 },
+    { letters: '1234567890-', subs: '!@#$%^&*()_', z: .05, y: 1.01, offset: -.14 },
+    { letters: 'QWERTYUIOP', subs: '', z: .59, y: .9, offset: -.13 },
+    { letters: 'ASDFGHJKL;', subs: '', z: 1.13, y: .79, offset: .03 },
+    { letters: 'ZXCVBNM,./', subs: '', z: 1.67, y: .68, offset: .19 },
   ];
   for (const row of rows) [...row.letters].forEach((letter, i) => makeKey(letter, letter.toLowerCase(), (i - (row.letters.length - 1) / 2) * .535 + row.offset, row.y, row.z, row.subs[i] || ''));
-  makeKey('SHIFT', 'shift', -2.97, .9, 1.72); makeKey('SHIFT', 'shift-right', 3.08, .9, 1.72);
-  makeKey('BACK', 'backspace', 3.05, 1.19, -.04, '', true); makeKey('LOCK', 'capslock', -3.01, 1.05, .56, '', true);
-  const space = new THREE.Group(); space.position.set(0, .73, 2.35); machine.add(space);
-  for (const x of [-1.6, 1.6]) rod(new THREE.Vector3(x, -.2, -.08), new THREE.Vector3(x, 0, 0), .045, chrome, space);
-  box(4.35, .095, .31, edge, 0, 0, 0, .045, space);
-  const spaceFace = box(4.28, .075, .29, black, 0, .045, .005, .035, space);
-  const spaceKey: MovingKey = { group: space, rest: .73, pressedAt: -10000, bar: null, value: ' ' };
+  makeKey('SHIFT', 'shift', -2.97, .68, 1.67); makeKey('SHIFT', 'shift-right', 3.08, .68, 1.67);
+  makeKey('BACK', 'backspace', 3.05, 1.01, .05, '', true); makeKey('LOCK', 'capslock', -3.01, .9, .59, '', true);
+  const cap = new THREE.LatheGeometry([new THREE.Vector2(.025, -.23), new THREE.Vector2(.025, -.04), new THREE.Vector2(.178, -.04), new THREE.Vector2(.197, -.016), new THREE.Vector2(.197, .025), new THREE.Vector2(.182, .03)], 32);
+  const inset = new THREE.LatheGeometry([new THREE.Vector2(.184, .029), new THREE.Vector2(.172, .022), new THREE.Vector2(.1, .012), new THREE.Vector2(0, .01)], 32);
+  const rim = new THREE.TorusGeometry(.19, .0075, 6, 32); rim.rotateX(-Math.PI / 2); rim.translate(0, .029, 0);
+  const legend = new THREE.CircleGeometry(.174, 32); legend.rotateX(-Math.PI / 2); legend.translate(0, .033, 0);
+  const atlasRects: number[] = [];
+  legends.forEach((_, i) => atlasRects.push(i % 8 / 8, 1 - (Math.floor(i / 8) + 1) / 8, 1 / 8, 1 / 8));
+  legend.setAttribute('atlasRect', new THREE.InstancedBufferAttribute(new Float32Array(atlasRects), 4));
+  const legendMaterial = new THREE.MeshStandardMaterial({ map: own(keyLegendAtlas(legends)), transparent: true, roughness: .88, depthWrite: false });
+  legendMaterial.onBeforeCompile = shader => {
+    shader.vertexShader = 'attribute vec4 atlasRect;\n' + shader.vertexShader;
+    shader.vertexShader = shader.vertexShader.replace('#include <uv_vertex>', '#include <uv_vertex>\n#ifdef USE_MAP\nvMapUv = vMapUv * atlasRect.zw + atlasRect.xy;\n#endif');
+  };
+  legendMaterial.customProgramCacheKey = () => 'type-key-atlas-v1';
+  const keyMeshes = [[cap, steel], [inset, keyBlack], [rim, nickel], [legend, legendMaterial]].map(([geometry, material]) => {
+    const mesh = new THREE.InstancedMesh(geometry as THREE.BufferGeometry, material as Material, ordered.length);
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); mesh.frustumCulled = false;
+    mesh.castShadow = geometry === cap; mesh.receiveShadow = geometry === inset;
+    mesh.userData.keys = ordered; machine.add(mesh);
+    if (geometry === cap || geometry === inset) targets.push(mesh);
+    if (geometry === inset) colors.forEach((color, i) => mesh.setColorAt(i, color));
+    return mesh;
+  });
+  const syncKeys = () => {
+    ordered.forEach((key, i) => { key.group.updateMatrix(); keyMeshes.forEach(mesh => mesh.setMatrixAt(i, key.group.matrix)); });
+    keyMeshes.forEach(mesh => { mesh.instanceMatrix.needsUpdate = true; });
+  };
+  syncKeys();
+  const space = new THREE.Group(); space.position.set(0, .55, 2.25); machine.add(space);
+  for (const x of [-1.5, 1.5]) rod(new THREE.Vector3(x, -.16, -.07), new THREE.Vector3(x, -.03, 0), .028, steel, space);
+  box(4.34, .075, .3, edge, 0, 0, 0, .035, space);
+  const spaceFace = box(4.28, .055, .29, black, 0, .035, .005, .025, space);
+  const spaceKey: MovingKey = { group: space, rest: .55, value: ' ', bar: null, strokes: [], spring: { position: 0, velocity: 0 } };
   spaceFace.userData.key = spaceKey; targets.push(spaceFace); keys.set(' ', spaceKey);
 
-  // Through-hole spool flanges, concentric wound ribbon, hubs and slotted screws.
+  // Recessed ribbon spools and a two-colour ribbon that passes the common strike point.
   for (const side of [-1, 1]) {
-    const spool = new THREE.Group(); spool.position.set(side * 2.32, 1.64, -1.17); machine.add(spool); spools.push(spool);
-    cylinder(.65, .075, black, 0, -.055, 0, spool); cylinder(.53, .14, ribbon, 0, .02, 0, spool);
-    const disc = new THREE.Shape(); disc.absarc(0, 0, .64, 0, Math.PI * 2, false);
-    for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2, hole = new THREE.Path(); hole.absarc(Math.cos(a) * .34, Math.sin(a) * .34, .098, 0, Math.PI * 2, true); disc.holes.push(hole); }
-    const flange = new THREE.Mesh(new THREE.ExtrudeGeometry(disc, { depth: .025, bevelEnabled: true, bevelThickness: .006, bevelSize: .006, bevelSegments: 1, curveSegments: 24 }), enamel);
-    flange.rotation.x = -Math.PI / 2; flange.position.y = .12; flange.castShadow = true; spool.add(flange);
-    ring(.614, .012, edge, 0, .151, 0, spool); ring(.14, .012, chrome, 0, .156, 0, spool);
-    cylinder(.115, .052, black, 0, .172, 0, spool); screw(0, .207, 0, spool);
-    for (const r of [.47, .49, .51]) ring(r, .004, edge, 0, .09, 0, spool);
-    rod(new THREE.Vector3(side * 1.82, 1.72, -1.2), new THREE.Vector3(side * .22, 1.86, -1.73), .013, ribbon);
+    const spool = new THREE.Group(); spool.position.set(side * 2.32, 1.53, -1.17); machine.add(spool); spools.push(spool);
+    cylinder(.62, .075, black, 0, -.025, 0, spool); cylinder(.51, .1, ribbon, 0, .035, 0, spool);
+    const disc = new THREE.Shape(); disc.absarc(0, 0, .61, 0, Math.PI * 2, false);
+    for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2, hole = new THREE.Path(); hole.absarc(Math.cos(a) * .34, Math.sin(a) * .34, .09, 0, Math.PI * 2, true); disc.holes.push(hole); }
+    const flange = new THREE.Mesh(new THREE.ExtrudeGeometry(disc, { depth: .018, bevelEnabled: true, bevelThickness: .005, bevelSize: .005, bevelSegments: 1, curveSegments: 24 }), edge);
+    flange.rotation.x = -Math.PI / 2; flange.position.y = .1; flange.castShadow = true; spool.add(flange);
+    ring(.587, .008, steel, 0, .125, 0, spool); ring(.13, .009, nickel, 0, .13, 0, spool);
+    cylinder(.1, .038, black, 0, .15, 0, spool); screw(0, .178, 0, spool);
+    const tape = new THREE.Mesh(new THREE.PlaneGeometry(1.91, .09), ribbon);
+    tape.position.set(side * 1.15, 1.75, -1.46); tape.rotation.y = side * .16; tape.rotation.z = side * .12; machine.add(tape);
   }
-  ribbonLift.position.set(0, 1.92, -1.62); machine.add(ribbonLift);
-  box(.51, .105, .018, ribbon, 0, 0, 0, .003, ribbonLift); box(.51, .065, .018, red, 0, -.08, 0, .003, ribbonLift);
-  for (const x of [-.27, .27]) { box(.027, .29, .06, chrome, x, -.03, .025, .008, ribbonLift); screw(x, -.16, .02, ribbonLift); }
-  // Twin carriage rails, paper table, rubber platen and precisely knurled knobs.
+  ribbonLift.position.set(0, 1.91, -1.515); machine.add(ribbonLift);
+  box(.48, .092, .016, ribbon, 0, 0, 0, .003, ribbonLift); box(.48, .056, .016, red, 0, -.07, 0, .003, ribbonLift);
+  for (const x of [-.26, .26]) box(.023, .25, .045, steel, x, -.025, .025, .006, ribbonLift);
+
   machine.add(carriage);
-  for (const z of [-2.21, -1.7]) { const rail = cylinder(.065, 8.35, chrome, 0, 1.61, z, carriage); rail.rotation.z = Math.PI / 2; }
-  box(7.45, .2, .69, black, 0, 1.72, -1.98, .06, carriage);
-  const table = box(6.75, .48, .09, enamel, 0, 2.28, -2.14, .035, carriage); table.rotation.x = -.11;
-  const mark = label('t y p e .', 3.0, .4, 0, 2.37, -2.075, carriage, '#e3dcc7', 'bold 115px Georgia'); mark.rotation.x = -.11;
-  const platen = cylinder(.255, 6.65, rubber, 0, 2.04, -1.82, carriage, 64); platen.rotation.z = Math.PI / 2; rollers.push(platen);
-  const axle = cylinder(.066, 8.35, chrome, 0, 2.04, -1.82, carriage); axle.rotation.z = Math.PI / 2;
+  for (const z of [-2.2, -1.74]) { const rail = cylinder(.045, 8.05, chrome, 0, 1.62, z, carriage); rail.rotation.z = Math.PI / 2; }
+  box(7.14, .18, .59, black, 0, 1.73, -1.98, .05, carriage);
+  const table = box(6.59, .48, .07, enamel, 0, 2.27, -2.13, .025, carriage); table.rotation.x = -.14;
+  const platen = cylinder(.264, 6.5, rubber, 0, 2.04, -1.82, carriage, 48); platen.rotation.z = Math.PI / 2;
+  // Rotate a parent around the true X axle, preserving the cylinder's Z orientation.
+  const platenAxle = new THREE.Group(); platenAxle.position.copy(platen.position); carriage.remove(platen); platen.position.set(0, 0, 0); platenAxle.add(platen); carriage.add(platenAxle); rollers.push(platenAxle);
+  const axle = cylinder(.052, 8.15, chrome, 0, 2.04, -1.82, carriage); axle.rotation.z = Math.PI / 2;
   for (const side of [-1, 1]) {
-    const knob = new THREE.Group(); knob.position.set(side * 4.0, 2.04, -1.82); carriage.add(knob);
-    const core = cylinder(.3, .32, black, 0, 0, 0, knob, 48); core.rotation.z = Math.PI / 2;
-    const outer = cylinder(.23, .012, enamel, side * .17, 0, 0, knob); outer.rotation.z = Math.PI / 2;
-    const collar = cylinder(.22, .13, chrome, -side * .22, 0, 0, knob); collar.rotation.z = Math.PI / 2;
-    for (let i = 0; i < 40; i++) { const a = i / 40 * Math.PI * 2; const grip = box(.32, .016, .024, edge, 0, Math.sin(a) * .295, Math.cos(a) * .295, .003, knob); grip.rotation.x = -a; }
-    box(.15, .48, .61, enamel, side * 3.43, 1.97, -1.86, .045, carriage);
-    const gear = cylinder(.2, .065, brass, side * 3.58, 2.04, -1.82, carriage, 24); gear.rotation.z = Math.PI / 2;
-    for (let i = 0; i < 20; i++) { const a = i * Math.PI / 10; box(.075, .04, .045, brass, side * 3.58, 2.04 + Math.sin(a) * .2, -1.82 + Math.cos(a) * .2, .004, carriage); }
+    const knob = new THREE.Group(); knob.position.set(side * 3.93, 2.04, -1.82); carriage.add(knob); rollers.push(knob);
+    const core = cylinder(.27, .28, black, 0, 0, 0, knob, 40); core.rotation.z = Math.PI / 2;
+    const collar = cylinder(.18, .1, nickel, -side * .19, 0, 0, knob); collar.rotation.z = Math.PI / 2;
+    for (let i = 0; i < 28; i++) { const a = i / 28 * Math.PI * 2, grip = box(.28, .012, .018, edge, 0, Math.sin(a) * .269, Math.cos(a) * .269, .002, knob); grip.rotation.x = -a; }
+    box(.14, .41, .5, enamel, side * 3.38, 1.99, -1.87, .045, carriage);
+    const gear = cylinder(.17, .05, brass, side * 3.53, 2.04, -1.82, carriage, 20); gear.rotation.z = Math.PI / 2;
   }
-  const bail = cylinder(.032, 6.72, chrome, 0, 2.24, -1.56, carriage); bail.rotation.z = Math.PI / 2;
-  for (const x of [-2.28, 2.28]) {
-    const wheel = cylinder(.103, .24, rubber, x, 2.24, -1.56, carriage); wheel.rotation.z = Math.PI / 2; rollers.push(wheel);
-    rod(new THREE.Vector3(x, 1.88, -1.4), new THREE.Vector3(x, 2.24, -1.56), .028, chrome, carriage); screw(x, 2.29, -1.55, carriage);
+  const bail = cylinder(.024, 6.56, chrome, 0, 2.31, -1.51, carriage); bail.rotation.z = Math.PI / 2;
+  for (const x of [-2.27, 2.27]) {
+    const wheelAxle = new THREE.Group(); wheelAxle.position.set(x, 2.31, -1.51); carriage.add(wheelAxle); rollers.push(wheelAxle);
+    const wheel = cylinder(.082, .19, rubber, 0, 0, 0, wheelAxle); wheel.rotation.z = Math.PI / 2;
+    rod(new THREE.Vector3(x, 1.9, -1.45), new THREE.Vector3(x, 2.31, -1.51), .023, steel, carriage);
   }
-  box(6.42, .095, .09, chrome, 0, 1.84, -1.47, .018, carriage);
+  box(6.25, .07, .065, steel, 0, 1.82, -1.44, .015, carriage);
   const scaleCanvas = document.createElement('canvas'); scaleCanvas.width = 2048; scaleCanvas.height = 128;
-  const sc = scaleCanvas.getContext('2d')!; sc.fillStyle = '#b0ad97'; sc.fillRect(0, 0, 2048, 128); sc.fillStyle = '#272b24'; sc.font = '28px Georgia'; sc.textAlign = 'center';
-  for (let i = 0; i <= 80; i++) { const x = 24 + i * 25; sc.fillRect(x, i % 5 ? 70 : 52, i % 5 ? 2 : 3, i % 5 ? 35 : 53); if (!(i % 10)) sc.fillText(String(i), x, 38); }
+  const sc = scaleCanvas.getContext('2d')!; sc.fillStyle = '#999b8a'; sc.fillRect(0, 0, 2048, 128); sc.fillStyle = '#292e26'; sc.font = '29px Georgia'; sc.textAlign = 'center';
+  for (let i = 0; i <= 80; i++) { const x = 24 + i * 25; sc.fillRect(x, i % 5 ? 73 : 52, i % 5 ? 2 : 3, i % 5 ? 31 : 52); if (!(i % 10)) sc.fillText(String(i), x, 37); }
   const scaleMap = own(new THREE.CanvasTexture(scaleCanvas)); scaleMap.colorSpace = THREE.SRGBColorSpace;
-  const scale = new THREE.Mesh(new THREE.PlaneGeometry(6.32, .19), new THREE.MeshStandardMaterial({ map: scaleMap, metalness: .6, roughness: .4 })); scale.position.set(0, 1.9, -1.409); carriage.add(scale);
-  for (const x of [-2.65, 2.65]) { box(.14, .19, .13, edge, x, 1.95, -1.42, .022, carriage); box(.055, .08, .015, red, x, 2.01, -1.345, .005, carriage); }
-  carriage.add(lever); lever.position.set(-3.53, 1.94, -1.94);
-  rod(new THREE.Vector3(0, 0, 0), new THREE.Vector3(-.75, .52, .4), .045, chrome, lever); rod(new THREE.Vector3(-.75, .52, .4), new THREE.Vector3(-.14, .52, .52), .05, chrome, lever);
-  const returnPad = box(.57, .095, .22, black, -.13, .52, .51, .045, lever);
-  returnPad.userData.key = { group: lever, rest: 1.94, pressedAt: -10000, bar: null, value: 'enter' } satisfies MovingKey;
+  const scale = new THREE.Mesh(new THREE.PlaneGeometry(6.2, .16), new THREE.MeshStandardMaterial({ map: scaleMap, metalness: .4, roughness: .53 })); scale.position.set(0, 1.9, -1.403); carriage.add(scale);
+  for (const x of [-2.68, 2.68]) { box(.11, .16, .1, black, x, 1.94, -1.42, .018, carriage); box(.038, .055, .012, red, x, 1.98, -1.36, .003, carriage); }
+  carriage.add(lever); lever.position.set(-3.53, 2.02, -1.94);
+  rod(new THREE.Vector3(0, 0, 0), new THREE.Vector3(-.6, .4, .34), .033, chrome, lever);
+  rod(new THREE.Vector3(-.6, .4, .34), new THREE.Vector3(-.12, .4, .49), .037, chrome, lever);
+  const returnPad = box(.52, .075, .2, black, -.1, .4, .49, .035, lever);
+  returnPad.userData.key = { group: lever, rest: 2.02, value: 'enter', bar: null, strokes: [], spring: { position: 0, velocity: 0 } } satisfies MovingKey;
   targets.push(returnPad);
-  // Vents, selector, rivets, apron wear and engraved maker's plate.
-  for (let i = 0; i < 7; i++) box(.025, .013, .33, black, 2.83 + i * .045, 1.49, -.85, .006);
-  cylinder(.065, .09, red, 3.08, 1.42, -.21);
-  for (const x of [-3.36, 3.36]) for (const z of [1.9, 2.33]) screw(x, .7, z);
-  box(1.22, .15, .018, brass, 0, .35, 2.79, .018);
-  const badge = label('type.  •  MECHANICAL', 1.1, .13, 0, .35, 2.805, machine, '#332c1f', 'bold 70px Georgia'); badge.rotation.x = 0;
-  for (const x of [-2.96, 2.86]) box(.16, .007, .018, chrome, x, .733, 2.58, .003);
-  // Collapse the stationary casting/comb/rods into material batches. Moving keys,
-  // spools and carriage keep their own transforms and raycast targets.
-  const batches = new Map<string, { material: THREE.Material; shadow: boolean; meshes: THREE.Mesh[] }>();
-  for (const object of [...machine.children]) {
-    if (!(object instanceof THREE.Mesh) || Array.isArray(object.material)) continue;
-    const id = `${object.material.uuid}:${object.castShadow}`;
-    if (!batches.has(id)) batches.set(id, { material: object.material, shadow: object.castShadow, meshes: [] });
-    batches.get(id)!.meshes.push(object);
-  }
-  const retired = new Set<THREE.BufferGeometry>();
-  for (const batch of batches.values()) {
-    if (batch.meshes.length < 2) continue;
-    const pieces = batch.meshes.map(mesh => { mesh.updateMatrix(); return (mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone()).applyMatrix4(mesh.matrix); });
-    const merged = mergeGeometries(pieces);
-    if (merged) {
-      const mesh = new THREE.Mesh(merged, batch.material); mesh.castShadow = batch.shadow; mesh.receiveShadow = true; machine.add(mesh);
-      batch.meshes.forEach(old => { machine.remove(old); retired.add(old.geometry); });
+  cylinder(.045, .07, red, 3.08, 1.23, -.24);
+
+  // Local contact occlusion under the chassis and in the recessed keyboard.
+  const shadow = new THREE.Mesh(new THREE.PlaneGeometry(9.1, 6.3), new THREE.MeshBasicMaterial({ map: own(contactShadow()), transparent: true, depthWrite: false, opacity: .8 }));
+  shadow.rotation.x = -Math.PI / 2; shadow.position.set(0, -.105, .15); machine.add(shadow);
+  // Batch static meshes recursively within each moving assembly, leaving hit targets intact.
+  for (const root of [machine, carriage, ...spools, ...rollers, lever, ...bars.map(bar => bar.group), space]) {
+    const batches = new Map<string, { material: THREE.Material; shadow: boolean; meshes: THREE.Mesh[] }>();
+    for (const object of [...root.children]) {
+      if (!(object instanceof THREE.Mesh) || object instanceof THREE.InstancedMesh || Array.isArray(object.material) || targets.includes(object) || object.material.transparent) continue;
+      const id = `${object.material.uuid}:${object.castShadow}`;
+      if (!batches.has(id)) batches.set(id, { material: object.material, shadow: object.castShadow, meshes: [] });
+      batches.get(id)!.meshes.push(object);
     }
-    pieces.forEach(piece => piece.dispose());
+    const retired = new Set<THREE.BufferGeometry>();
+    for (const batch of batches.values()) {
+      if (batch.meshes.length < 2) continue;
+      const pieces = batch.meshes.map(mesh => {
+        mesh.updateMatrix();
+        const geometry = (mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone()).applyMatrix4(mesh.matrix);
+        // Mirroring a side cheek reverses its winding; baking it must preserve front faces.
+        if (mesh.matrix.determinant() < 0) {
+          for (const attribute of Object.values(geometry.attributes)) {
+            for (let i = 0; i < attribute.count; i += 3) for (let c = 0; c < attribute.itemSize; c++) {
+              const a = i * attribute.itemSize + c, b = (i + 2) * attribute.itemSize + c;
+              const value = attribute.array[a]; attribute.array[a] = attribute.array[b]; attribute.array[b] = value;
+            }
+          }
+        }
+        return geometry;
+      });
+      const merged = mergeGeometries(pieces);
+      if (merged) { const mesh = new THREE.Mesh(merged, batch.material); if (batch.material === enamel) mesh.name = 'enamel-casting'; mesh.castShadow = batch.shadow; mesh.receiveShadow = true; root.add(mesh); batch.meshes.forEach(old => { root.remove(old); retired.add(old.geometry); }); }
+      pieces.forEach(piece => piece.dispose());
+    }
+    // A shared geometry (e.g. the two cheeks) is retired only after both have been batched.
+    retired.forEach(geometry => geometry.dispose());
   }
-  retired.forEach(geometry => geometry.dispose());
-  return { machine, carriage, keys, targets, spools, rollers, lever, ribbonLift };
+  return { machine, carriage, keys, bars, targets, spools, rollers, lever, ribbonLift, syncKeys };
 }

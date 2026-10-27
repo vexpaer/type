@@ -4,7 +4,8 @@ import { icon, mountIcons } from './icons';
 import { loadStore, newDraft, persistStore, type Draft } from './storage';
 import { getStats, safeFilename } from './stats.js';
 import { TypingAudio } from './audio';
-import type { Typewriter } from './typewriter';
+import type { Typewriter, CaretLayout } from './typewriter';
+import { IMPACT_MS } from './mechanics.js';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const editor = $<HTMLTextAreaElement>('editor');
@@ -22,6 +23,7 @@ let pendingDelete: string | null = null;
 let deleteTimer = 0;
 let switching = false;
 let shiftLatched = false, capsLatched = false;
+let compositionFeedback = 0;
 const audio = new TypingAudio();
 audio.enabled = store.sound;
 
@@ -60,17 +62,23 @@ function resizeEditor(followCaret = false) {
   pageInner.scrollTop = previousScroll;
   if (followCaret) requestAnimationFrame(keepCaretVisible);
 }
-function keepCaretVisible() {
-  if (document.activeElement !== editor) return;
-  // Measure the actual wrapped text, including CJK and the current font size.
+function measureCaret() {
+  // Native wrapping, CJK width and text size all contribute to the visual column.
   const mirror = document.createElement('div');
   const computed = getComputedStyle(editor);
   for (const property of ['font-family', 'font-size', 'font-weight', 'line-height', 'letter-spacing', 'padding', 'border', 'box-sizing', 'tab-size', 'word-spacing']) mirror.style.setProperty(property, computed.getPropertyValue(property));
   Object.assign(mirror.style, { position: 'absolute', visibility: 'hidden', pointerEvents: 'none', width: `${editor.clientWidth}px`, whiteSpace: 'pre-wrap', overflowWrap: 'break-word', top: '0', left: '0' });
   mirror.textContent = editor.value.slice(0, editor.selectionStart);
   const marker = document.createElement('span'); marker.textContent = '\u200b'; mirror.append(marker); $('editor-wrap').append(mirror);
-  const caretTop = marker.getBoundingClientRect().top;
   const lineHeight = parseFloat(computed.lineHeight);
+  const localTop = marker.offsetTop, localLeft = marker.offsetLeft;
+  const caretTop = marker.getBoundingClientRect().top;
+  mirror.remove();
+  return { caretTop, localTop, lineHeight, layout: { progress: Math.max(0, Math.min(1, localLeft / Math.max(1, editor.clientWidth))), line: Math.round(localTop / lineHeight) } satisfies CaretLayout };
+}
+function keepCaretVisible() {
+  if (document.activeElement !== editor) return;
+  const { caretTop, lineHeight } = measureCaret();
   if (store.theme === 'atelier') {
     const scroller = document.querySelector<HTMLElement>('.page-inner')!, rect = scroller.getBoundingClientRect();
     if (caretTop + lineHeight > rect.bottom - 45) scroller.scrollTop += caretTop + lineHeight - rect.bottom + 45;
@@ -79,17 +87,14 @@ function keepCaretVisible() {
     if (caretTop + lineHeight > innerHeight - 130) window.scrollBy({ top: caretTop + lineHeight - innerHeight + 130, behavior: 'instant' });
     else if (caretTop < 100) window.scrollBy({ top: caretTop - 100, behavior: 'instant' });
   }
-  mirror.remove();
 }
 function setWriting() {
   document.body.classList.add('is-writing'); clearTimeout(writingTimer);
   writingTimer = window.setTimeout(() => document.body.classList.remove('is-writing'), 1800);
 }
 function mechanicalFeedback(key: string, returnKey = false) {
-  const beforeCaret = editor.value.slice(0, editor.selectionStart);
-  const column = [...beforeCaret.slice(beforeCaret.lastIndexOf('\n') + 1)].length;
-  machine?.strike(key, column, returnKey);
-  audio.strike(store.theme === 'atelier', returnKey);
+  machine?.strike(key, measureCaret().layout, returnKey);
+  audio.strike(store.theme === 'atelier', returnKey, store.theme === 'atelier' ? (returnKey ? .09 : IMPACT_MS / 1000) : 0);
 }
 
 function insertMachineText(value: string, from = editor.selectionStart, end = editor.selectionEnd) {
@@ -106,8 +111,8 @@ function insertMachineText(value: string, from = editor.selectionStart, end = ed
 // Mesh clicks enter through the same input pipeline as a physical/virtual keyboard.
 function typeFromMachine(key: string) {
   if (key === 'enter') { $('return-key').click(); return; }
-  if (key === 'shift' || key === 'shift-right') { shiftLatched = !shiftLatched; machine?.strike(key, 0); return; }
-  if (key === 'capslock') { capsLatched = !capsLatched; machine?.strike(key, 0); return; }
+  if (key === 'shift' || key === 'shift-right') { shiftLatched = !shiftLatched; machine?.strike(key); return; }
+  if (key === 'capslock') { capsLatched = !capsLatched; machine?.strike(key); return; }
   const start = editor.selectionStart, end = editor.selectionEnd;
   let value = key, from = start;
   if (key === 'backspace') {
@@ -142,24 +147,32 @@ function showMachineFallback() {
   }
   fallback.append(keyboard);
 }
-editor.addEventListener('compositionstart', () => { composing = true; });
-editor.addEventListener('compositionend', () => { composing = false; mechanicalFeedback('j'); scheduleSave(); updateStats(); resizeEditor(true); });
+editor.addEventListener('compositionstart', () => { composing = true; cancelAnimationFrame(compositionFeedback); compositionFeedback = 0; });
+editor.addEventListener('compositionend', event => {
+  composing = false; scheduleSave(); updateStats(); resizeEditor(true); setWriting();
+  // Browsers order the final input/compositionend differently. Coalesce one commit per frame.
+  if (event.data) compositionFeedback = requestAnimationFrame(() => { compositionFeedback = 0; mechanicalFeedback('composition'); });
+});
 editor.addEventListener('input', (event) => {
   const input = event as InputEvent;
   updateStats(); resizeEditor(true); setWriting();
   if (!composing && !input.isComposing) {
-    if (input.inputType !== 'insertFromPaste' && input.inputType !== 'insertFromDrop' && input.inputType !== 'historyUndo' && input.inputType !== 'historyRedo') {
+    if (!compositionFeedback && input.inputType !== 'insertFromPaste' && input.inputType !== 'insertFromDrop' && input.inputType !== 'historyUndo' && input.inputType !== 'historyRedo') {
       const returning = input.inputType === 'insertLineBreak' || input.data === '\n';
       const key = input.inputType.startsWith('delete') ? 'backspace' : [...(input.data || '')].at(-1) || (returning ? 'enter' : '');
       mechanicalFeedback(key, returning);
-    }
+    } else if (!compositionFeedback) machine?.syncCaret(measureCaret().layout);
     scheduleSave();
   }
 });
 editor.addEventListener('keydown', (event) => {
   if (audio.enabled && !composing && !event.ctrlKey && !event.metaKey) audio.activate();
-  if (!composing && (event.key === 'Shift' || event.key === 'CapsLock')) machine?.strike(event.key === 'CapsLock' ? 'capslock' : event.location === 2 ? 'shift-right' : 'shift', 0);
+  if (!composing && (event.key === 'Shift' || event.key === 'CapsLock')) machine?.strike(event.key === 'CapsLock' ? 'capslock' : event.location === 2 ? 'shift-right' : 'shift');
 });
+const syncCaret = () => { if (!composing && store.theme === 'atelier') machine?.syncCaret(measureCaret().layout); };
+editor.addEventListener('click', syncCaret);
+editor.addEventListener('select', syncCaret);
+editor.addEventListener('keyup', event => { if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key)) syncCaret(); });
 title.addEventListener('input', () => { scheduleSave(); setWriting(); });
 title.addEventListener('keydown', event => { if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); editor.focus(); } });
 
@@ -170,6 +183,7 @@ function loadDraft(id: string) {
   $('page-date').textContent = date.toLocaleDateString('en', { month: 'long', day: 'numeric', year: 'numeric' });
   document.title = `${draft.title.trim() || 'Untitled'} — type.`;
   updateStats(); resizeEditor();
+  if (machine) machine.syncCaret(measureCaret().layout);
   document.querySelector<HTMLElement>('.page-inner')!.scrollTop = 0;
   window.scrollTo({ top: 0, behavior: 'instant' });
 }
@@ -235,6 +249,7 @@ function syncThemeUI() {
   document.querySelectorAll<HTMLButtonElement>('[data-theme-choice]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.themeChoice === store.theme)));
   machine?.setActive(retro);
   resizeEditor();
+  if (retro) requestAnimationFrame(syncCaret);
 }
 async function ensureMachine() {
   if (machine || machineLoading) return machineLoading;
@@ -323,6 +338,7 @@ function applyFontSize() {
   $('font-size-label').textContent=String(store.fontSize);
   $<HTMLButtonElement>('font-decrease').disabled=store.fontSize<=16;$<HTMLButtonElement>('font-increase').disabled=store.fontSize>=30;
   resizeEditor();
+  if (machine) syncCaret();
 }
 $('font-decrease').addEventListener('click',()=>setFontSize(-1));$('font-increase').addEventListener('click',()=>setFontSize(1));
 $('return-key').addEventListener('click',()=> {
@@ -351,6 +367,12 @@ document.addEventListener('keydown',event=> {
     event.preventDefault();controls[(current+(event.key==='ArrowDown'?1:-1)+controls.length)%controls.length]?.focus();
   }
 });
+let measuredEditorWidth = 0;
+new ResizeObserver(([entry]) => {
+  if (Math.abs(entry.contentRect.width - measuredEditorWidth) < .5) return;
+  measuredEditorWidth = entry.contentRect.width;
+  requestAnimationFrame(() => { resizeEditor(true); syncCaret(); });
+}).observe(editor);
 window.addEventListener('resize',()=>resizeEditor());
 window.addEventListener('pagehide',()=>{capture();save();});
 document.addEventListener('visibilitychange',()=>{if(document.hidden){capture();save();}});
@@ -362,7 +384,7 @@ window.addEventListener('storage',event=> {
 });
 loadDraft(store.activeId);applyFontSize();syncSound();syncThemeUI();
 if(store.theme==='atelier')void ensureMachine();
-void document.fonts.ready.then(()=>resizeEditor());
+void document.fonts.ready.then(()=> { resizeEditor(); syncCaret(); });
 if(loaded.error)toast('Saved pages could not be read. Download important writing as a backup.');
 // Preserve a touch user's quiet entry: opening the page never summons a mobile keyboard.
 if(matchMedia('(pointer:fine)').matches)editor.focus({preventScroll:true});

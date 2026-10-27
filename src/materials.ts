@@ -19,7 +19,7 @@ export function enamelSurface() {
   const { element, ctx } = canvas(256), rng = random(19);
   const pixels = ctx.createImageData(256, 256);
   for (let i = 0; i < pixels.data.length; i += 4) {
-    const n = 90 + rng() * 65;
+    const n = 168 + rng() * 19;
     pixels.data.set([n, n, n, 255], i);
   }
   ctx.putImageData(pixels, 0, 0);
@@ -31,20 +31,20 @@ export function paperSurface() {
   const { element, ctx } = canvas(1024), rng = random(115);
   const pixels = ctx.createImageData(1024, 1024);
   for (let y = 0; y < 1024; y++) for (let x = 0; x < 1024; x++) {
-    const n = (rng() - .5) * 20 + Math.sin(y * .48) * 1.4;
-    const edge = Math.pow(Math.abs(x / 512 - 1), 12) * 5;
+    const n = (rng() - .5) * 5 + Math.sin(y * .48) * .35;
+    const edge = Math.pow(Math.abs(x / 512 - 1), 16) * 2;
     const i = (y * 1024 + x) * 4;
-    pixels.data.set([237 + n - edge, 226 + n - edge, 203 + n - edge, 255], i);
+    pixels.data.set([245 + n - edge, 239 + n - edge, 224 + n - edge, 255], i);
   }
   ctx.putImageData(pixels, 0, 0);
   // Long, interlocked pulp fibres, laid lines and occasional darker inclusions.
-  for (let i = 0; i < 18500; i++) {
+  for (let i = 0; i < 9000; i++) {
     const x = rng() * 1024, y = rng() * 1024, length = 2 + rng() * 16;
-    ctx.strokeStyle = rng() > .52 ? 'rgba(109,88,55,.12)' : 'rgba(255,252,240,.32)';
+    ctx.strokeStyle = rng() > .52 ? 'rgba(109,88,55,.045)' : 'rgba(255,252,240,.18)';
     ctx.lineWidth = .35 + rng() * .7; ctx.beginPath(); ctx.moveTo(x, y);
     ctx.quadraticCurveTo(x + length * .4, y - 1, x + length, y + (rng() - .5) * 3); ctx.stroke();
   }
-  for (let y = 0; y < 1024; y += 4) { ctx.fillStyle = 'rgba(131,111,77,.022)'; ctx.fillRect(0, y, 1024, .65); }
+  for (let y = 0; y < 1024; y += 4) { ctx.fillStyle = 'rgba(131,111,77,.009)'; ctx.fillRect(0, y, 1024, .65); }
   const color = texture(element);
   const bump = texture(element, false);
   return { color, bump, url: element.toDataURL() };
@@ -52,18 +52,39 @@ export function paperSurface() {
 
 export function deskSurface() {
   const { element, ctx } = canvas(1024), rng = random(762);
-  ctx.fillStyle = '#30251e'; ctx.fillRect(0, 0, 1024, 1024);
+  ctx.fillStyle = '#3b3028'; ctx.fillRect(0, 0, 1024, 1024);
   for (let i = 0; i < 3200; i++) {
     const y = rng() * 1024;
     ctx.beginPath(); ctx.moveTo(0, y);
     for (let x = 0; x <= 1024; x += 16) {
       ctx.lineTo(x, y + Math.sin(x * .004 + y * .023) * 9 + Math.sin(x * .017 + y) * 1.3);
     }
-    ctx.strokeStyle = i % 3 ? `rgba(132,93,61,${rng() * .11})` : `rgba(6,4,3,${rng() * .25})`;
+    ctx.strokeStyle = i % 3 ? `rgba(132,104,81,${rng() * .065})` : `rgba(6,4,3,${rng() * .09})`;
     ctx.lineWidth = .3 + rng() * 1.6; ctx.stroke();
   }
   const map = texture(element); map.wrapS = map.wrapT = THREE.RepeatWrapping; map.repeat.set(28, 28);
   return map;
+}
+
+export function contactShadow() {
+  const { element, ctx } = canvas(256);
+  const gradient = ctx.createRadialGradient(128, 128, 18, 128, 128, 128);
+  gradient.addColorStop(0, 'rgba(0,0,0,.65)'); gradient.addColorStop(.55, 'rgba(0,0,0,.38)'); gradient.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = gradient; ctx.fillRect(0, 0, 256, 256);
+  return texture(element);
+}
+
+/** One atlas for all moving legends, so lettering does not cost one material per key. */
+export function keyLegendAtlas(labels: { text: string; sub: string }[]) {
+  const { element, ctx } = canvas(1024);
+  labels.forEach(({ text, sub }, index) => {
+    const x = index % 8 * 128, y = Math.floor(index / 8) * 128;
+    ctx.fillStyle = '#e1d9c5'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = text.length > 2 ? '500 24px Georgia' : '500 69px Georgia';
+    ctx.fillText(text, x + 64, y + (sub ? 77 : 67));
+    if (sub) { ctx.font = '22px Georgia'; ctx.fillText(sub, x + 64, y + 30); }
+  });
+  return texture(element);
 }
 
 export function labelTexture(text: string, sub = '', dark = false) {

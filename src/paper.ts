@@ -1,113 +1,104 @@
 import * as THREE from 'three';
 import { PaperPhysics } from './paper-physics.js';
+import { quadMatrix } from './mechanics.js';
 import { paperSurface } from './materials';
+import { PAPER_ANCHOR, PAPER_HEIGHT, PAPER_WIDTH, PAPER_TILT, PAPER_READING_BOTTOM } from './scene-layout';
 
-/** A thin shell with a pinned feed edge. Native editing sits on its flat central region. */
+/** Fixed paper dimensions, an actual platen wrap, and a planar native editing region. */
 export class Paper {
   readonly group = new THREE.Group();
   readonly physics = new PaperPhysics();
-  private geometry = new THREE.PlaneGeometry(5.25, 1, 40, 56);
-  private material: THREE.MeshStandardMaterial;
-  private surface: THREE.Mesh;
-  private underside: THREE.Mesh;
-  private edge: THREE.Line;
+  private geometry = new THREE.PlaneGeometry(PAPER_WIDTH, 1, 40, 56);
   private edgeGeometry = new THREE.BufferGeometry();
-  private height = 3;
-  private width = 5.25;
-  private anchor = new THREE.Vector3(0, 2.15, -1.81);
+  private material: THREE.MeshStandardMaterial;
+  private undersideMaterial: THREE.MeshStandardMaterial;
+  private edgeMaterial = new THREE.LineBasicMaterial({ color: 0xd7cfbb, transparent: true, opacity: .42 });
   private page = document.getElementById('page')!;
   private dragged = false;
   private lastPointer = new THREE.Vector2();
   private bounds = { width: 1, height: 1, left: 0, top: 0 };
-  private leafShift = 0;
   private corners: HTMLButtonElement[] = [];
   private texture: ReturnType<typeof paperSurface>;
+  private editorWidth = 1;
+  private editorHeight = 1;
+  private feed = 0;
+  private feedVelocity = 0;
 
   constructor(private camera: THREE.Camera, private wake: () => void, private reduced: MediaQueryList) {
     this.texture = paperSurface();
-    this.material = new THREE.MeshStandardMaterial({
-      map: this.texture.color, bumpMap: this.texture.bump, bumpScale: .014,
-      color: 0xe4d9c3, roughness: .94, metalness: 0, side: THREE.DoubleSide,
-    });
-    this.surface = new THREE.Mesh(this.geometry, this.material);
-    this.surface.castShadow = true; this.surface.receiveShadow = true;
-    this.group.add(this.surface);
-    this.underside = new THREE.Mesh(this.geometry, new THREE.MeshStandardMaterial({ map: this.texture.color, color: 0xc8bda4, side: THREE.DoubleSide, roughness: 1 }));
-    this.underside.position.z = -.009; this.group.add(this.underside);
-    this.edge = new THREE.Line(this.edgeGeometry, new THREE.LineBasicMaterial({ color: 0xc1b394, transparent: true, opacity: .75 }));
-    this.group.add(this.edge);
+    this.material = new THREE.MeshStandardMaterial({ map: this.texture.color, bumpMap: this.texture.bump, bumpScale: .004, color: 0xffffff, roughness: .96, metalness: 0, side: THREE.FrontSide });
+    this.undersideMaterial = new THREE.MeshStandardMaterial({ map: this.texture.color, color: 0xe1d8c2, side: THREE.BackSide, roughness: 1 });
+    const surface = new THREE.Mesh(this.geometry, this.material); surface.castShadow = surface.receiveShadow = true; this.group.add(surface);
+    const underside = new THREE.Mesh(this.geometry, this.undersideMaterial); underside.position.z = -.004; this.group.add(underside);
+    this.group.add(new THREE.Line(this.edgeGeometry, this.edgeMaterial));
+    this.group.position.copy(PAPER_ANCHOR); this.group.rotation.x = PAPER_TILT;
     this.page.style.setProperty('--paper-fibre', `url(${this.texture.url})`);
     for (const side of [-1, 1]) {
       const button = document.createElement('button'); button.className = `paper-corner ${side < 0 ? 'paper-corner-left' : 'paper-corner-right'}`;
-      button.setAttribute('aria-label', `Flex ${side < 0 ? 'left' : 'right'} paper corner`);
-      button.title = 'Drag to feel the paper';
+      button.setAttribute('aria-label', `Flex ${side < 0 ? 'left' : 'right'} paper corner`); button.title = 'Drag to feel the paper';
       button.addEventListener('pointerdown', event => {
         if (this.reduced.matches) return;
         event.preventDefault(); this.dragged = true; this.lastPointer.set(event.clientX, event.clientY); button.setPointerCapture(event.pointerId);
-        this.physics.impulse(.9, side); this.wake();
+        this.physics.impulse(.7, side); this.wake();
       });
       button.addEventListener('pointermove', event => {
         if (!this.dragged) return;
-        const delta = THREE.MathUtils.clamp((event.clientY - this.lastPointer.y) * -.12 + (event.clientX - this.lastPointer.x) * .04, -1.8, 1.8);
+        const delta = THREE.MathUtils.clamp((event.clientY - this.lastPointer.y) * -.08 + (event.clientX - this.lastPointer.x) * .025, -1.3, 1.3);
         this.physics.impulse(delta, side); this.lastPointer.set(event.clientX, event.clientY); this.wake();
       });
       const release = () => { this.dragged = false; this.wake(); };
       button.addEventListener('pointerup', release); button.addEventListener('pointercancel', release); button.addEventListener('lostpointercapture', release);
-      button.addEventListener('keydown', event => { if ((event.key === 'Enter' || event.key === ' ') && !this.reduced.matches) { event.preventDefault(); this.physics.impulse(2, side); this.wake(); } });
+      button.addEventListener('keydown', event => { if ((event.key === 'Enter' || event.key === ' ') && !this.reduced.matches) { event.preventDefault(); this.physics.impulse(1.4, side); this.wake(); } });
       this.page.append(button); this.corners.push(button);
     }
+    this.deform();
   }
 
   layout(width: number, height: number, rect: DOMRect) {
     this.bounds = { width, height, left: rect.left, top: rect.top };
-    this.group.position.copy(this.anchor); this.group.quaternion.copy(this.camera.quaternion); this.group.rotateX(-.045);
     this.group.updateMatrixWorld(true);
-    const bottom = this.project(new THREE.Vector3(0, 0, 0));
-    const unit = this.project(new THREE.Vector3(0, 1, 0));
-    const scale = bottom.y - unit.y;
-    // Leave room for the caption and retain readable paper at short viewport heights.
-    this.height = Math.max(2.2, (bottom.y - 62) / scale);
-    this.width = width < 600 ? Math.min(7.2, (width - 38) / scale) : 5.25;
-    this.page.style.width = `${this.width * scale}px`;
-    this.page.style.height = `${this.height * scale}px`;
-    this.deform(); this.placeEditor();
+    const topLeft = this.project(new THREE.Vector3(-PAPER_WIDTH / 2, PAPER_HEIGHT, 0));
+    const topRight = this.project(new THREE.Vector3(PAPER_WIDTH / 2, PAPER_HEIGHT, 0));
+    const bottomLeft = this.project(new THREE.Vector3(-PAPER_WIDTH / 2, PAPER_READING_BOTTOM, 0));
+    this.editorWidth = topLeft.distanceTo(topRight); this.editorHeight = topLeft.distanceTo(bottomLeft);
+    // Stable local pixels let native wrapping and caret measurements share one coordinate space.
+    this.page.style.width = `${this.editorWidth}px`; this.page.style.height = `${this.editorHeight}px`;
+    this.placeEditor();
   }
 
-  strike(column: number, returning: boolean) {
+  strike(progress: number, returning: boolean) {
     if (this.reduced.matches) return;
-    this.physics.impulse(returning ? 2.7 : .38, returning ? -1 : (column % 11 - 5) / 9);
+    this.physics.impulse(returning ? 1.25 : .13, returning ? -.25 : (progress - .5) * .3);
+    if (returning) this.feedVelocity += .2;
   }
 
   update(dt: number, carriage: number) {
-    if (this.reduced.matches) this.physics.reset(); else this.physics.step(dt);
-    this.leafShift = carriage;
-    this.group.position.copy(this.anchor); this.group.position.x += this.leafShift;
-    // The page's rigid central reading region follows the same torsion as its text.
-    this.group.quaternion.copy(this.camera.quaternion);
-    this.group.rotateX(-.045 + this.physics.sample(1) * .055);
-    this.group.rotateY(this.physics.twist * .5);
-    this.group.rotateZ(this.physics.twist * .15);
+    if (this.reduced.matches) { this.physics.reset(); this.feed = this.feedVelocity = 0; }
+    else {
+      this.physics.step(dt);
+      const steps = Math.max(1, Math.ceil(dt / .008)), step = dt / steps;
+      for (let i = 0; i < steps; i++) { this.feedVelocity += (-100 * this.feed - 19 * this.feedVelocity) * step; this.feed += this.feedVelocity * step; }
+    }
+    this.group.position.copy(PAPER_ANCHOR); this.group.position.x += carriage;
+    this.group.position.y += this.feed;
+    // Keep the central editing plane rigid; vibration belongs to the free edges.
+    this.group.rotation.set(PAPER_TILT, 0, 0);
     this.deform(); this.placeEditor();
   }
 
   private deform() {
-    const positions = this.geometry.attributes.position as THREE.BufferAttribute;
-    const uv = this.geometry.attributes.uv as THREE.BufferAttribute;
+    const positions = this.geometry.attributes.position as THREE.BufferAttribute, uv = this.geometry.attributes.uv as THREE.BufferAttribute;
     for (let i = 0; i < positions.count; i++) {
-      const u = uv.getX(i), t = uv.getY(i), x = (u - .5) * this.width;
-      const sides = Math.pow(Math.abs(u - .5) * 2, 10);
-      const top = Math.pow(t, 10);
-      const curl = sides * (.09 + top * .3) + top * .13 * Math.cos(u * 5);
-      const feedCurve = t < .08 ? -.16 * Math.pow(1 - t / .08, 2) : 0;
-      const bending = this.physics.sample(t);
-      const z = curl + feedCurve + bending * (.28 + sides * .72) + this.physics.twist * x * t * t;
-      const edgeIrregularity = sides * Math.sin(t * 117 + u * 3) * .004;
-      const rolledCorner = top * sides * (.055 + .055 * Math.sin(u * 5));
-      positions.setXYZ(i, x + Math.sign(x) * edgeIrregularity, t * this.height - bending * bending * .22 - rolledCorner, z);
+      const u = uv.getX(i), t = uv.getY(i), x = (u - .5) * PAPER_WIDTH;
+      const y = -.24 + t * (PAPER_HEIGHT + .24), side = Math.pow(Math.abs(u - .5) * 2, 14), top = Math.pow(t, 18);
+      const wrap = y < 0 ? -.264 + Math.sqrt(Math.max(0, .264 ** 2 - y ** 2)) : 0;
+      const curl = side * t * t * (.022 + top * (u < .5 ? .07 : .12));
+      const bending = this.physics.sample(t) * (side * .5 + top * .035);
+      const twist = this.physics.twist * x * t * t * side * .22;
+      positions.setXYZ(i, x + Math.sign(x) * side * Math.sin(t * 85) * .0012, y, wrap + curl + bending + twist);
     }
     positions.needsUpdate = true; this.geometry.computeVertexNormals(); this.geometry.computeBoundingSphere();
     const edgePoints: THREE.Vector3[] = [];
-    // PlaneGeometry's first row is the free top edge; include both side edges.
     for (let row = 56; row >= 0; row--) edgePoints.push(new THREE.Vector3().fromBufferAttribute(positions, row * 41));
     for (let col = 1; col <= 40; col++) edgePoints.push(new THREE.Vector3().fromBufferAttribute(positions, col));
     for (let row = 1; row <= 56; row++) edgePoints.push(new THREE.Vector3().fromBufferAttribute(positions, row * 41 + 40));
@@ -121,23 +112,18 @@ export class Paper {
 
   private placeEditor() {
     this.group.updateMatrixWorld(true);
-    const origin = this.project(new THREE.Vector3(-this.width / 2, this.height, .025));
-    const x = this.project(new THREE.Vector3(this.width / 2, this.height, .025));
-    const y = this.project(new THREE.Vector3(-this.width / 2, 0, .025));
     const room = this.page.parentElement!.getBoundingClientRect();
-    const w = parseFloat(this.page.style.width), h = parseFloat(this.page.style.height);
-    this.page.style.transform = `matrix(${(x.x - origin.x) / w},${(x.y - origin.y) / w},${(y.x - origin.x) / h},${(y.y - origin.y) / h},${origin.x + this.bounds.left - room.left},${origin.y + this.bounds.top - room.top})`;
+    const points = [new THREE.Vector3(-PAPER_WIDTH / 2, PAPER_HEIGHT, .009), new THREE.Vector3(PAPER_WIDTH / 2, PAPER_HEIGHT, .009),
+      new THREE.Vector3(PAPER_WIDTH / 2, PAPER_READING_BOTTOM, .009), new THREE.Vector3(-PAPER_WIDTH / 2, PAPER_READING_BOTTOM, .009)]
+      .map(point => { const p = this.project(point); return { x: p.x + this.bounds.left - room.left, y: p.y + this.bounds.top - room.top }; });
+    const matrix = quadMatrix(this.editorWidth, this.editorHeight, points);
+    this.page.style.transform = `matrix3d(${matrix.join(',')})`;
   }
 
-  get moving() { return this.physics.moving || this.dragged; }
-  releaseEditorLayout() {
-    this.page.style.removeProperty('width'); this.page.style.removeProperty('height'); this.page.style.removeProperty('transform');
-  }
+  get moving() { return this.physics.moving || this.dragged || Math.abs(this.feed) + Math.abs(this.feedVelocity) > .0001; }
+  releaseEditorLayout() { ['width', 'height', 'transform'].forEach(property => this.page.style.removeProperty(property)); }
   dispose() {
-    this.corners.forEach(button => button.remove());
-    this.geometry.dispose(); this.edgeGeometry.dispose(); this.material.dispose();
-    (this.underside.material as THREE.Material).dispose(); (this.edge.material as THREE.Material).dispose();
-    this.texture.color.dispose(); this.texture.bump.dispose();
-    this.releaseEditorLayout();
+    this.corners.forEach(button => button.remove()); this.geometry.dispose(); this.edgeGeometry.dispose();
+    this.material.dispose(); this.undersideMaterial.dispose(); this.edgeMaterial.dispose(); this.texture.color.dispose(); this.texture.bump.dispose(); this.releaseEditorLayout();
   }
 }

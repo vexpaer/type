@@ -1,34 +1,31 @@
 # Design and QA
 
-Current implementation and verification: **2026-10-26**. This replaces the earlier SVG-renderer notes and numeric visual scores.
+Current implementation and verification: **2026-10-28**.
 
 ## Direction
 
-type. keeps its established identity: two rooms share one document. The quiet room is an open monochrome writing surface with Lora; the writer’s atelier uses Special Elite on warm paper above a mechanical typewriter. DM Sans remains the control face in both rooms. Page management and export stay secondary to writing. No sample document is inserted into a new installation.
-
-The supplied Continental photograph informed the mechanical proportions and key treatment. It is a visual reference, not a bitmap asset in the product. The current keyboard uses shallow concave near-black faces, thin aged-nickel rims, ivory legends, short dark stems, a black space bar and classic staggered rows. The earlier thick, bright key treatment was replaced. [DESIGN.md](../DESIGN.md) records the built palette, typography, layout and material rules.
+type. retains its two-room identity and native document editor. The atelier now emphasizes a coherent cast instrument: a low foundation, continuous profiled side cheeks, a recessed keyboard, thin nickel-ring keys, subdued steel type bars and clear-coated dark enamel. The quiet room keeps its monochrome layout and typography.
 
 ## Implementation
 
-- Three.js loads when the atelier is needed. Local geometry and seeded procedural surfaces supply the machine, desk, paper and lettering; no remote model or texture is loaded.
-- Keys and individual type bars, ribbon, spools, carriage and return lever respond to writing. Raycast key and lever clicks enter the same editor input pipeline as keyboard input.
-- The paper uses a 40 × 56-segment mesh, a thin underside and an edge outline. Fibre and bump maps, a feed curve and curled edges give it material detail. Coupled damped bending strips advance in fixed 1/120-second steps and react to typing, Return and corner dragging. This is lightweight visual physics, not measured paper mechanics, finite-element analysis or a full rigid-body simulation.
-- The title input and textarea remain native DOM controls. Their shared page follows the projected central reading area while the surrounding mesh deforms. Click-to-type and Return use a native undo bridge through `execCommand`, with a range-edit fallback when insertion is unavailable; fallback undo behavior remains browser-dependent.
-- Rendering sleeps at rest and in background tabs. Reduced motion suppresses animated mechanical feedback and paper flexing. WebGL initialization failure or context loss switches to an editable paper surface with a dimensional CSS keyboard. The previous SVG scene renderer is no longer used. Generated paper fibre is retained after context loss when available; startup without WebGL does not guarantee this texture.
+- The original local, procedural Three.js model remains self-contained. The casting uses continuous beveled profiles rather than stacked perimeter boxes. Mirrored cheek winding is corrected before material batching.
+- Each of 44 type bars has a distinct segment pivot and a raised pose terminating at one print point. Resting bars sit low in a dark basket. Keys, ribbon, bars, spools, rollers, carriage and return lever have separate motion.
+- Moving key bodies, insets, rims and legends use four instanced meshes. Legends share one atlas; instance IDs retain click-to-type targets. Static geometry is batched within the moving assemblies.
+- Mostly dielectric enamel with a clear coat, subdued nickel and steel, matte rubber, a broad warm window light, matching reflection cards and restrained fill distinguish the materials. Cast shadows and a local chassis contact shadow ground the instrument.
+- A mild perspective camera fits fixed physical paper dimensions. Phone layouts crop the outer machine instead of shrinking the writing surface excessively. Entry adds one short camera settle; there is no idle orbit or continuous animation.
+- The sheet wraps tangentially around the rubber platen. A four-corner CSS homography projects the native editor onto its stable central plane. Free edges can flex without rotating the whole document on every keystroke.
+- Overlapping stroke envelopes, continuous key springs and impact-timed ribbon/audio allow rapid repeated keys. The carriage follows measured visual columns, including soft wraps, CJK width, cursor navigation and text size changes. Travel remains deliberately bounded; this is an editable writing surface with mechanical feedback, not a fixed-print-point typewriter emulator.
+- Composition commits animate the print mechanism without arbitrarily depressing J. Browser composition/input ordering is coalesced. Native selection, undo, spellcheck and editing remain primary.
+- Rendering still sleeps after motion settles and in background tabs. Reduced motion suppresses animated feedback. WebGL initialization failure or context loss retains the native page and CSS keyboard.
 
 ## Verification
 
-The production build and all five Node tests passed. Three tests cover paper spring stability, its pinned feed edge and consistent fixed-step behavior across frame intervals.
+`npm run build` (strict TypeScript and Vite), `npm test` and `git diff --check` pass. Thirteen Node tests cover statistics, paper spring behavior, overlapping mechanical timing, rapid same-key retriggers, four-corner projection, distinct type-bar pivots converging at one strike point, finite geometry, instanced-key raycasting, mirrored casting normals and camera fitting.
 
-The current WebGL scene was captured in Chromium with ANGLE SwiftShader at **1440 × 1000**, **390 × 844**, **768 × 1024** and **1366 × 768** CSS pixels. Independent visual review examined all four captures and found no remaining material visual issue. DOM checks found no horizontal overflow at those sizes. These are browser viewport checks, not physical-device tests. The README’s [atelier image](screenshots/atelier.jpg) comes from this WebGL capture; it does not show the retired SVG fallback.
+Camera fitting checks cover scene viewports of **1060 × 822**, **1060 × 596**, **768 × 820**, **390 × 660** and **320 × 550** pixels. These are geometry/projection checks, not browser viewport captures or physical-device tests. An offline depth-buffered geometry rendering was used to inspect silhouette, component placement and occlusion. It does not validate WebGL shaders, PBR reflections, shadow quality or frame rate.
 
-Browser interaction checks passed with zero page errors:
+Browser checks on the local preview verified mixed Chinese/Latin/emoji insertion, native undo, Return → undo → redo, autosave/reload, theme switching and the usable CSS fallback. The browser reports that WebGL is disabled, so it cannot exercise the current live 3D path. No current WebGL screenshot or hardware performance result is claimed. The README's October 26 atelier screenshot is explicitly historical.
 
-- Mixed Chinese, Latin and emoji insertion; autosave and reload; long-document caret scrolling.
-- Raycast key clicks and corner dragging; reduced-motion behavior; a usable CSS fallback after forced WebGL context loss.
-- Text preservation across room changes, including a settled quiet-room layout with the atelier transform cleared.
-- Return click → undo → redo, and raycast A-key click → undo → redo.
+## Remaining verification
 
-## Remaining limits
-
-Desktop hardware-GPU frame rate, real phones and their virtual keyboards, and genuine operating-system IME composition have not been verified. Mixed CJK text insertion does not establish an IME composition pass. Native controls and composition event handling are present, but these device-specific behaviors still need direct testing. SwiftShader confirms the WebGL rendering path and interactions without establishing hardware performance.
+Current WebGL shader/material appearance, animated raycasting and real-GPU frame rate need a WebGL-enabled browser. Real phones, virtual keyboard behavior and operating-system IME composition still require direct device testing. Mixed Unicode insertion and composition event handling do not establish a real IME pass.
