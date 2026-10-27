@@ -5,7 +5,8 @@ export const PAPER_HEIGHT = 4.65;
 export const PAPER_TILT = -.14;
 // Tangency to the rubber platen, including the paper's backward lean.
 export const PAPER_ANCHOR = new THREE.Vector3(0, 2.04 - Math.sin(PAPER_TILT) * .264, -1.82 + Math.cos(PAPER_TILT) * .264);
-export const PAPER_READING_BOTTOM = .32;
+// The editable print line now extends to the tangency point of the platen.
+export const PAPER_READING_BOTTOM = -.035;
 
 /** Fit one physical assembly; the paper never stretches to fill a viewport. */
 export function fitCamera(camera: THREE.PerspectiveCamera, width: number, height: number) {

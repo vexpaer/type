@@ -42,14 +42,26 @@ export class Typewriter {
   private hovered: MovingKey | null = null;
   private ownedTextures = new Set<THREE.Texture>();
   private pendingResize = 0;
+  private shiftStrokes: number[] = [];
+  private bellAt = -10000;
+  private lastStrikeAt = -10000;
+  private orbitYaw = 0;
+  private orbitPitch = 0;
+  private orbitScale = 1;
+  private orbitDirty = false;
+  private orbitPointer: { id: number; x: number; y: number } | null = null;
 
-  constructor(private container: HTMLElement, private onLost: () => void, private onKey?: (key: string) => void) {
+  constructor(private container: HTMLElement, private onLost: () => void, private onKey?: (key: string) => void, private onBell?: () => void) {
     this.renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, powerPreference: 'default' });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, innerWidth < 600 ? 1.4 : 1.75));
     this.renderer.setClearColor(0x000000, 0); this.renderer.shadowMap.enabled = true; this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace; this.renderer.toneMapping = THREE.ACESFilmicToneMapping; this.renderer.toneMappingExposure = 1.1;
     this.renderer.domElement.addEventListener('webglcontextlost', this.handleLost);
     this.renderer.domElement.addEventListener('pointermove', this.handlePointer); this.renderer.domElement.addEventListener('pointerleave', this.handleLeave); this.renderer.domElement.addEventListener('pointerdown', this.handlePress);
+    this.renderer.domElement.addEventListener('pointerup', this.handleRelease); this.renderer.domElement.addEventListener('pointercancel', this.handleRelease);
+    this.renderer.domElement.addEventListener('wheel', this.handleWheel, { passive: false });
+    this.renderer.domElement.addEventListener('contextmenu', this.preventContextMenu);
+    this.renderer.domElement.addEventListener('dblclick', this.resetOrbit);
     container.append(this.renderer.domElement);
     this.environmentGenerator = new THREE.PMREMGenerator(this.renderer);
     // Reflection cards match the large, warm window and restrained cool fill in the scene.
@@ -95,17 +107,42 @@ export class Typewriter {
     return (hit.instanceId === undefined ? hit.object.userData.key : hit.object.userData.keys[hit.instanceId]) as MovingKey;
   }
   private handlePointer = (event: PointerEvent) => {
-    if (!this.active || event.pointerType !== 'mouse') return;
+    if (!this.active) return;
+    if (this.orbitPointer?.id === event.pointerId) {
+      const dx = event.clientX - this.orbitPointer.x, dy = event.clientY - this.orbitPointer.y;
+      this.orbitPointer.x = event.clientX; this.orbitPointer.y = event.clientY;
+      this.orbitYaw = THREE.MathUtils.clamp(this.orbitYaw - dx * .005, -.85, .85);
+      this.orbitPitch = THREE.MathUtils.clamp(this.orbitPitch - dy * .004, -.36, .42);
+      this.orbitDirty = true; this.wake(450); return;
+    }
+    if (event.pointerType !== 'mouse') return;
     const key = this.pick(event); if (key === this.hovered) return;
     this.hovered = key; this.container.style.cursor = key ? 'pointer' : 'default';
     this.renderer.domElement.title = key ? `Type ${key.value === ' ' ? 'a space' : key.value}` : ''; this.wake(180);
   };
   private handleLeave = () => { this.hovered = null; this.container.style.cursor = ''; this.wake(180); };
   private handlePress = (event: PointerEvent) => {
-    if (!this.active || event.button !== 0) return;
-    const key = this.pick(event); if (!key) return;
-    event.preventDefault(); this.onKey?.(key.value);
+    if (!this.active || (event.button !== 0 && event.button !== 2)) return;
+    const key = event.button === 0 ? this.pick(event) : null;
+    if (key) { event.preventDefault(); this.onKey?.(key.value); return; }
+    // Drag empty chassis/background to orbit. Right drag also works above the keys.
+    event.preventDefault(); this.orbitPointer = { id: event.pointerId, x: event.clientX, y: event.clientY };
+    this.renderer.domElement.setPointerCapture(event.pointerId);
+    this.container.style.cursor = 'grabbing';
   };
+  private handleRelease = (event: PointerEvent) => {
+    if (this.orbitPointer?.id !== event.pointerId) return;
+    this.orbitPointer = null; this.orbitDirty = true;
+    if (this.renderer.domElement.hasPointerCapture(event.pointerId)) this.renderer.domElement.releasePointerCapture(event.pointerId);
+    this.container.style.cursor = ''; this.wake(350);
+  };
+  private handleWheel = (event: WheelEvent) => {
+    if (!this.active) return;
+    event.preventDefault(); this.orbitScale = THREE.MathUtils.clamp(this.orbitScale * Math.exp(event.deltaY * .001), .77, 1.7);
+    this.orbitDirty = true; this.wake(400);
+  };
+  private preventContextMenu = (event: Event) => event.preventDefault();
+  private resetOrbit = () => { this.orbitYaw = 0; this.orbitPitch = 0; this.orbitScale = 1; this.orbitDirty = true; this.wake(450); };
   private resize() {
     if (this.disposed || !this.active) return;
     const rect = this.container.getBoundingClientRect(); if (!rect.width || !rect.height) return;
@@ -120,8 +157,12 @@ export class Typewriter {
     else { cancelAnimationFrame(this.frame); this.frame = 0; this.lastFrame = 0; this.paper.releaseEditorLayout(); }
   }
   syncCaret(caret: CaretLayout) {
-    this.lastCaret = caret; this.impacts.forEach(impact => { impact.caret = caret; });
-    this.carriageTarget = carriageOffset(caret.progress, innerWidth < 600 ? .24 : .7); this.wake(500);
+    // The bell sounds when the active line enters the right-hand margin, not on Enter.
+    if (this.active && performance.now() - this.lastStrikeAt < 220 && caret.line === this.lastCaret.line && this.lastCaret.progress < .86 && caret.progress >= .86) {
+      this.bellAt = performance.now(); this.onBell?.();
+    }
+    this.lastCaret = caret;
+    this.carriageTarget = carriageOffset(caret.progress, innerWidth < 600 ? 3.75 : 4.35); this.wake(500);
   }
   strike(value: string, caret: CaretLayout = this.lastCaret, returning = false) {
     if (!this.active) return;
@@ -129,12 +170,16 @@ export class Typewriter {
     const shifted: Record<string, string> = { '!': '1', '@': '2', '#': '3', '$': '4', '%': '5', '^': '6', '&': '7', '*': '8', '(': '9', ')': '0', '_': '-', ':': ';', '?': '/', '<': ',', '>': '.' };
     const key = this.assembly.keys.get(shifted[value] || value.toLowerCase());
     if (key) { key.strokes.push(now); if (key.strokes.length > 8) key.strokes.shift(); }
-    if (value === 'shift' || value === 'shift-right' || value === 'capslock') { this.wake(260); return; }
+    if (value === 'shift' || value === 'shift-right' || value === 'capslock') {
+      if (value !== 'capslock') this.shiftStrokes.push(now);
+      this.wake(260); return;
+    }
     const striking = value !== ' ' && value !== 'backspace' && !returning;
     if (striking) {
+      this.lastStrikeAt = now;
       this.strokes.push(now);
-      // Composition/non-Latin input animates the print mechanism without inventing a letter key.
-      const bar = key?.bar || this.assembly.bars[22]; bar.strokes.push(now);
+      // Only a real matching key moves a bar; IME commits never strike a random slug.
+      if (key?.bar) key.bar.strokes.push(now);
     }
     const feed = returning || caret.line > this.lastCaret.line;
     if (returning) this.returnAt = now;
@@ -150,8 +195,14 @@ export class Typewriter {
     const dt = this.lastFrame ? Math.min((now - this.lastFrame) / 1000, .05) : 1 / 60; this.lastFrame = now;
     const a = this.assembly;
     for (const impact of this.impacts.filter(impact => impact.at <= now || this.reduced.matches)) {
-      this.carriageTarget = carriageOffset(impact.caret.progress, innerWidth < 600 ? .24 : .7);
-      if (impact.strike) this.spoolTarget += .022;
+      // Carriage position is driven by the live caret; an old impact must not pull it backwards.
+      if (impact.strike) {
+        // At contact the type slug, ribbon and intended print column share X=0.
+        // Remove spring lag only at the instant of imprint; the escapement then steps on.
+        this.carriagePosition = carriageOffset(impact.caret.progress, innerWidth < 600 ? 3.75 : 4.35);
+        this.carriageVelocity = 0;
+        this.spoolTarget += .022;
+      }
       if (impact.feed) this.rollerTarget -= .19;
       this.paper.strike(impact.caret.progress, impact.feed);
     }
@@ -162,12 +213,17 @@ export class Typewriter {
       const depression = this.reduced.matches ? 0 : advanceKey(key.spring, overlappingStroke(key.strokes, now) * .105, dt);
       if (this.reduced.matches) key.spring.position = key.spring.velocity = 0;
       key.group.position.y = key.rest - depression + (this.hovered === key && !this.reduced.matches ? .008 : 0); key.group.rotation.x = depression * -.2;
+      if (key.lever) key.lever.rotation.x = -depression * 1.6;
     }
     for (const bar of a.bars) {
       bar.strokes = bar.strokes.filter(time => now - time < 180);
       bar.group.quaternion.slerpQuaternions(bar.rest, bar.raised, this.reduced.matches ? 0 : overlappingStroke(bar.strokes, now, 'bar'));
     }
     a.syncKeys();
+    this.shiftStrokes = this.shiftStrokes.filter(time => now - time < 200);
+    a.typeBasket.position.y = this.reduced.matches ? 0 : -overlappingStroke(this.shiftStrokes, now) * .075;
+    const bellAge = now - this.bellAt;
+    a.bellStriker.rotation.z = !this.reduced.matches && bellAge >= 0 && bellAge < 280 ? Math.sin(bellAge / 280 * Math.PI * 3) * .36 * (1 - bellAge / 280) : 0;
     a.ribbonLift.position.y = 1.91 + (this.reduced.matches ? 0 : overlappingStroke(this.strokes, now, 'ribbon') * .12);
     const returning = (now - this.returnAt) / 420;
     a.lever.rotation.y = !this.reduced.matches && returning >= 0 && returning < 1 ? Math.sin(returning * Math.PI) * -.3 : 0;
@@ -182,9 +238,19 @@ export class Typewriter {
     a.spools.forEach((spool, i) => { spool.rotation.y = this.spoolAngle * (i ? -1 : 1); });
     a.rollers.forEach(roller => { roller.rotation.x = this.rollerAngle; });
     const intro = this.reduced.matches ? 1 : THREE.MathUtils.clamp((now - this.entranceAt) / 700, 0, 1);
-    this.camera.position.copy(this.fittedPosition).addScaledVector(this.fittedPosition.clone().sub(new THREE.Vector3(0, 2.95, -.42)).normalize(), .65 * (1 - intro) ** 3);
-    this.camera.updateMatrixWorld(true);
-    a.carriage.position.x = this.carriagePosition; this.paper.update(dt, this.carriagePosition); this.renderer.render(this.scene, this.camera);
+    const center = new THREE.Vector3(0, 2.95, -.42);
+    const spherical = new THREE.Spherical().setFromVector3(this.fittedPosition.clone().sub(center));
+    spherical.theta += this.orbitYaw; spherical.phi = THREE.MathUtils.clamp(spherical.phi + this.orbitPitch, .5, 1.72);
+    spherical.radius *= this.orbitScale;
+    this.camera.position.copy(center).add(new THREE.Vector3().setFromSpherical(spherical));
+    this.camera.position.addScaledVector(this.camera.position.clone().sub(center).normalize(), .65 * (1 - intro) ** 3);
+    this.camera.lookAt(center); this.camera.updateMatrixWorld(true);
+    a.carriage.position.x = this.carriagePosition; this.paper.update(dt, this.carriagePosition);
+    if (this.orbitDirty || this.orbitPointer) {
+      const rect = this.container.getBoundingClientRect(); this.paper.layout(rect.width, rect.height, rect);
+      this.orbitDirty = false;
+    }
+    this.renderer.render(this.scene, this.camera);
     const unsettled = Math.abs(this.carriageVelocity) + Math.abs(this.carriageTarget - this.carriagePosition) > .0001;
     if (!this.reduced.matches && (now < this.renderUntil || this.paper.moving || unsettled || this.impacts.length)) this.frame = requestAnimationFrame(this.tick); else this.lastFrame = 0;
   };
@@ -193,6 +259,8 @@ export class Typewriter {
     document.removeEventListener('visibilitychange', this.handleVisibility); this.reduced.removeEventListener('change', this.handleReduced);
     this.renderer.domElement.removeEventListener('webglcontextlost', this.handleLost);
     this.renderer.domElement.removeEventListener('pointermove', this.handlePointer); this.renderer.domElement.removeEventListener('pointerleave', this.handleLeave); this.renderer.domElement.removeEventListener('pointerdown', this.handlePress);
+    this.renderer.domElement.removeEventListener('pointerup', this.handleRelease); this.renderer.domElement.removeEventListener('pointercancel', this.handleRelease);
+    this.renderer.domElement.removeEventListener('wheel', this.handleWheel); this.renderer.domElement.removeEventListener('contextmenu', this.preventContextMenu); this.renderer.domElement.removeEventListener('dblclick', this.resetOrbit);
     const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>();
     this.scene.traverse(object => { if ((object instanceof THREE.Mesh || object instanceof THREE.Line) && !this.paper.group.getObjectById(object.id)) {
       geometries.add(object.geometry); (Array.isArray(object.material) ? object.material : [object.material]).forEach(material => materials.add(material));

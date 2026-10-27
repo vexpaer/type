@@ -18,7 +18,7 @@ for (const name of ['machine', 'materials', 'scene-layout']) {
 }
 after(() => rmSync(compiled, { recursive: true, force: true }));
 globalThis.document = { createElement: () => ({ width: 1, height: 1, getContext: () => ({
-  createImageData: (w, h) => ({ data: new Uint8ClampedArray(w * h * 4) }), putImageData() {}, fillRect() {}, fillText() {}, beginPath() {}, moveTo() {}, lineTo() {}, quadraticCurveTo() {}, stroke() {},
+  createImageData: (w, h) => ({ data: new Uint8ClampedArray(w * h * 4) }), putImageData() {}, fillRect() {}, clearRect() {}, fillText() {}, beginPath() {}, moveTo() {}, lineTo() {}, quadraticCurveTo() {}, stroke() {},
   createRadialGradient: () => ({ addColorStop() {} }),
 }) }) };
 const { buildMachine } = await import(pathToFileURL(join(compiled, 'machine.js')));
@@ -31,11 +31,16 @@ test('every type slug meets the shared strike point from a distinct physical piv
   for (const bar of assembly.bars) {
     pivots.add(bar.group.position.toArray().map(n => n.toFixed(5)).join(','));
     let tip = new THREE.Vector3();
-    bar.group.children[0].geometry.computeBoundingBox();
-    const geometry = bar.group.children[0].geometry;
+    const body = bar.group.children.find(child => {
+      if (!(child instanceof THREE.Mesh)) return false;
+      child.geometry.computeBoundingBox();
+      return child.geometry.boundingBox.max.y - child.geometry.boundingBox.min.y > .3;
+    });
+    assert.ok(body, 'each engraved typebar retains its full-length steel arm');
+    const geometry = body.geometry;
     // The batched rod + slug reaches its end along local Y.
     tip.set(0, geometry.boundingBox.max.y, 0).applyQuaternion(bar.raised).add(bar.group.position);
-    assert.ok(tip.distanceTo(new THREE.Vector3(0, 2.035, -1.535)) < .011);
+    assert.ok(tip.distanceTo(new THREE.Vector3(0, 2.038, -1.556)) < .011);
   }
   assert.equal(pivots.size, assembly.bars.length);
 });
@@ -83,4 +88,22 @@ test('camera fitting keeps the physical paper readable and in frame at responsiv
     }
     assert.ok((right.x - left.x) * width / 2 > (width < 600 ? 245 : 310), `${width} × ${height}: paper too narrow`);
   }
+});
+
+test('the engraved basket, articulated key levers and carriage bell are independent physical pieces', () => {
+  assert.equal(assembly.bars.length, 44);
+  assert.ok(assembly.bars.every(bar => bar.group.parent === assembly.typeBasket));
+  assert.ok(assembly.keys.get('a').lever);
+  assert.ok(assembly.keys.get('a').bar);
+  assert.ok(assembly.bellStriker.parent.parent === assembly.carriage);
+  assert.equal(assembly.keys.get(' ').bar, null);
+});
+
+test('steel slug impact is on the wrapped paper surface, behind the ribbon', () => {
+  const [x, y, z] = [0, 2.038, -1.556];
+  const paperY = (y - PAPER_ANCHOR.y) / Math.cos(PAPER_TILT);
+  const wrap = paperY < 0 ? -.264 + Math.sqrt(.264 ** 2 - paperY ** 2) : 0;
+  const paperZ = PAPER_ANCHOR.z + Math.sin(PAPER_TILT) * paperY + Math.cos(PAPER_TILT) * wrap;
+  assert.equal(x, 0);
+  assert.ok(Math.abs(paperZ - z) < .01, 'slug must touch the 3D sheet at the platen');
 });

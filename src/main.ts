@@ -5,7 +5,7 @@ import { loadStore, newDraft, persistStore, type Draft } from './storage';
 import { getStats, safeFilename } from './stats.js';
 import { TypingAudio } from './audio';
 import type { Typewriter, CaretLayout } from './typewriter';
-import { IMPACT_MS } from './mechanics.js';
+import { IMPACT_MS, forecastTyping } from './mechanics.js';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const editor = $<HTMLTextAreaElement>('editor');
@@ -62,13 +62,13 @@ function resizeEditor(followCaret = false) {
   pageInner.scrollTop = previousScroll;
   if (followCaret) requestAnimationFrame(keepCaretVisible);
 }
-function measureCaret() {
+function measureCaret(text = editor.value, caret = editor.selectionStart) {
   // Native wrapping, CJK width and text size all contribute to the visual column.
   const mirror = document.createElement('div');
   const computed = getComputedStyle(editor);
   for (const property of ['font-family', 'font-size', 'font-weight', 'line-height', 'letter-spacing', 'padding', 'border', 'box-sizing', 'tab-size', 'word-spacing']) mirror.style.setProperty(property, computed.getPropertyValue(property));
   Object.assign(mirror.style, { position: 'absolute', visibility: 'hidden', pointerEvents: 'none', width: `${editor.clientWidth}px`, whiteSpace: 'pre-wrap', overflowWrap: 'break-word', top: '0', left: '0' });
-  mirror.textContent = editor.value.slice(0, editor.selectionStart);
+  mirror.textContent = text.slice(0, caret);
   const marker = document.createElement('span'); marker.textContent = '\u200b'; mirror.append(marker); $('editor-wrap').append(mirror);
   const lineHeight = parseFloat(computed.lineHeight);
   const localTop = marker.offsetTop, localLeft = marker.offsetLeft;
@@ -76,8 +76,21 @@ function measureCaret() {
   mirror.remove();
   return { caretTop, localTop, lineHeight, layout: { progress: Math.max(0, Math.min(1, localLeft / Math.max(1, editor.clientWidth))), line: Math.round(localTop / lineHeight) } satisfies CaretLayout };
 }
+/** Keep the active line at the platen while earlier text advances upward on returns.
+ * This affects only the 3D atelier; the textarea itself still owns selection/undo.
+ */
+function syncPrintLine() {
+  const wrap = $('editor-wrap');
+  if (store.theme !== 'atelier' || !machine) { wrap.style.removeProperty('--type-feed-offset'); return; }
+  const pageInner = document.querySelector<HTMLElement>('.page-inner')!;
+  const { localTop, lineHeight } = measureCaret();
+  const printTop = pageInner.clientHeight - lineHeight * 1.08;
+  const offset = printTop - (wrap.offsetTop + localTop - pageInner.scrollTop);
+  wrap.style.setProperty('--type-feed-offset', `${offset.toFixed(2)}px`);
+}
 function keepCaretVisible() {
   if (document.activeElement !== editor) return;
+  if (store.theme === 'atelier' && machine) { syncPrintLine(); return; }
   const { caretTop, lineHeight } = measureCaret();
   if (store.theme === 'atelier') {
     const scroller = document.querySelector<HTMLElement>('.page-inner')!, rect = scroller.getBoundingClientRect();
@@ -97,6 +110,38 @@ function mechanicalFeedback(key: string, returnKey = false) {
   audio.strike(store.theme === 'atelier', returnKey, store.theme === 'atelier' ? (returnKey ? .09 : IMPACT_MS / 1000) : 0);
 }
 
+// A mechanical impression is committed when the slug reaches the ribbon, not when
+// the browser receives the key. Native textarea editing remains the source of truth.
+type Impression = { value: string; timer: number };
+const impressions: Impression[] = [];
+let committingImpression = false;
+function commitImpression(impression: Impression) {
+  clearTimeout(impression.timer);
+  const index = impressions.indexOf(impression);
+  if (index < 0) return;
+  impressions.splice(index, 1);
+  committingImpression = true;
+  try { insertMachineText(impression.value); }
+  finally { committingImpression = false; }
+  machine?.syncCaret(measureCaret().layout);
+}
+function flushImpressions() {
+  // A pending character must not land in another draft, selection or input method.
+  for (const impression of [...impressions]) commitImpression(impression);
+}
+function queueImpression(value: string) {
+  if (audio.enabled) audio.activate();
+  // Predict the current print column including characters still in flight.
+  // Fast typists can have several typebars airborne before the first ink lands.
+  const inFlight = impressions.map(impression => impression.value).join('');
+  const projected = forecastTyping(editor.value, editor.selectionStart, editor.selectionEnd, inFlight);
+  machine?.strike(value, measureCaret(projected.text, projected.caret).layout);
+  audio.strike(true, false, IMPACT_MS / 1000);
+  const impression: Impression = { value, timer: 0 };
+  impressions.push(impression);
+  impression.timer = window.setTimeout(() => commitImpression(impression), IMPACT_MS);
+}
+
 function insertMachineText(value: string, from = editor.selectionStart, end = editor.selectionEnd) {
   editor.focus({ preventScroll: true }); editor.setSelectionRange(from, end);
   if (audio.enabled) audio.activate();
@@ -110,6 +155,7 @@ function insertMachineText(value: string, from = editor.selectionStart, end = ed
 
 // Mesh clicks enter through the same input pipeline as a physical/virtual keyboard.
 function typeFromMachine(key: string) {
+  if (key === 'backspace') flushImpressions();
   if (key === 'enter') { $('return-key').click(); return; }
   if (key === 'shift' || key === 'shift-right') { shiftLatched = !shiftLatched; machine?.strike(key); return; }
   if (key === 'capslock') { capsLatched = !capsLatched; machine?.strike(key); return; }
@@ -125,7 +171,9 @@ function typeFromMachine(key: string) {
     } else if (capsLatched) value = key.toUpperCase();
     shiftLatched = false;
   }
-  insertMachineText(value, from, end);
+  if (value && key !== 'backspace' && start === end && store.theme === 'atelier' && machine && !reducedMotion.matches) {
+    editor.focus({ preventScroll: true }); queueImpression(value);
+  } else { flushImpressions(); insertMachineText(value, from, end); }
 }
 
 function showMachineFallback() {
@@ -147,7 +195,15 @@ function showMachineFallback() {
   }
   fallback.append(keyboard);
 }
-editor.addEventListener('compositionstart', () => { composing = true; cancelAnimationFrame(compositionFeedback); compositionFeedback = 0; });
+editor.addEventListener('beforeinput', event => {
+  if (committingImpression || composing || event.isComposing) return;
+  const printable = event.inputType === 'insertText' && event.data && [...event.data].length === 1;
+  if (!printable || editor.selectionStart !== editor.selectionEnd) { flushImpressions(); return; }
+  if (store.theme !== 'atelier' || !machine || reducedMotion.matches || !event.cancelable) return;
+  event.preventDefault(); queueImpression(event.data!);
+});
+editor.addEventListener('pointerdown', flushImpressions);
+editor.addEventListener('compositionstart', () => { flushImpressions(); composing = true; cancelAnimationFrame(compositionFeedback); compositionFeedback = 0; });
 editor.addEventListener('compositionend', event => {
   composing = false; scheduleSave(); updateStats(); resizeEditor(true); setWriting();
   // Browsers order the final input/compositionend differently. Coalesce one commit per frame.
@@ -157,7 +213,8 @@ editor.addEventListener('input', (event) => {
   const input = event as InputEvent;
   updateStats(); resizeEditor(true); setWriting();
   if (!composing && !input.isComposing) {
-    if (!compositionFeedback && input.inputType !== 'insertFromPaste' && input.inputType !== 'insertFromDrop' && input.inputType !== 'historyUndo' && input.inputType !== 'historyRedo') {
+    if (committingImpression) machine?.syncCaret(measureCaret().layout);
+    else if (!compositionFeedback && input.inputType !== 'insertFromPaste' && input.inputType !== 'insertFromDrop' && input.inputType !== 'historyUndo' && input.inputType !== 'historyRedo') {
       const returning = input.inputType === 'insertLineBreak' || input.data === '\n';
       const key = input.inputType.startsWith('delete') ? 'backspace' : [...(input.data || '')].at(-1) || (returning ? 'enter' : '');
       mechanicalFeedback(key, returning);
@@ -166,10 +223,11 @@ editor.addEventListener('input', (event) => {
   }
 });
 editor.addEventListener('keydown', (event) => {
+  if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown', 'Backspace', 'Delete', 'Enter', 'Tab'].includes(event.key) || event.ctrlKey || event.metaKey || event.altKey) flushImpressions();
   if (audio.enabled && !composing && !event.ctrlKey && !event.metaKey) audio.activate();
   if (!composing && (event.key === 'Shift' || event.key === 'CapsLock')) machine?.strike(event.key === 'CapsLock' ? 'capslock' : event.location === 2 ? 'shift-right' : 'shift');
 });
-const syncCaret = () => { if (!composing && store.theme === 'atelier') machine?.syncCaret(measureCaret().layout); };
+const syncCaret = () => { if (!composing && store.theme === 'atelier') { syncPrintLine(); machine?.syncCaret(measureCaret().layout); } };
 editor.addEventListener('click', syncCaret);
 editor.addEventListener('select', syncCaret);
 editor.addEventListener('keyup', event => { if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key)) syncCaret(); });
@@ -177,13 +235,14 @@ title.addEventListener('input', () => { scheduleSave(); setWriting(); });
 title.addEventListener('keydown', event => { if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); editor.focus(); } });
 
 function loadDraft(id: string) {
+  flushImpressions();
   store.activeId = id;
   const draft = active(); title.value = draft.title; editor.value = draft.text;
   const date = new Date(draft.created);
   $('page-date').textContent = date.toLocaleDateString('en', { month: 'long', day: 'numeric', year: 'numeric' });
   document.title = `${draft.title.trim() || 'Untitled'} — type.`;
   updateStats(); resizeEditor();
-  if (machine) machine.syncCaret(measureCaret().layout);
+  if (machine) { machine.syncCaret(measureCaret().layout); requestAnimationFrame(syncPrintLine); }
   document.querySelector<HTMLElement>('.page-inner')!.scrollTop = 0;
   window.scrollTo({ top: 0, behavior: 'instant' });
 }
@@ -249,14 +308,14 @@ function syncThemeUI() {
   document.querySelectorAll<HTMLButtonElement>('[data-theme-choice]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.themeChoice === store.theme)));
   machine?.setActive(retro);
   resizeEditor();
-  if (retro) requestAnimationFrame(syncCaret);
+  if (retro) requestAnimationFrame(syncCaret); else syncPrintLine();
 }
 async function ensureMachine() {
   if (machine || machineLoading) return machineLoading;
   machineLoading = (async () => {
     try {
       const { Typewriter } = await import('./typewriter');
-      machine = new Typewriter($('machine-stage'), showMachineFallback, typeFromMachine);
+      machine = new Typewriter($('machine-stage'), showMachineFallback, typeFromMachine, () => audio.bell());
       machine.setActive(store.theme === 'atelier');
     } catch (error) {
       console.warn('The 3D renderer is unavailable. The writing page remains usable.', error);
@@ -268,7 +327,7 @@ async function ensureMachine() {
 async function changeTheme(theme: 'quiet' | 'atelier') {
   if (switching || theme === store.theme) { closeOverlays(true); return; }
   switching = true;
-  capture();save();
+  flushImpressions(); capture();save();
   const selection = { start:editor.selectionStart, end:editor.selectionEnd };
   closeOverlays();
   if (theme === 'atelier') await ensureMachine();
@@ -342,7 +401,7 @@ function applyFontSize() {
 }
 $('font-decrease').addEventListener('click',()=>setFontSize(-1));$('font-increase').addEventListener('click',()=>setFontSize(1));
 $('return-key').addEventListener('click',()=> {
-  insertMachineText('\n');
+  flushImpressions(); insertMachineText('\n');
 });
 
 document.addEventListener('keydown',event=> {
@@ -374,8 +433,8 @@ new ResizeObserver(([entry]) => {
   requestAnimationFrame(() => { resizeEditor(true); syncCaret(); });
 }).observe(editor);
 window.addEventListener('resize',()=>resizeEditor());
-window.addEventListener('pagehide',()=>{capture();save();});
-document.addEventListener('visibilitychange',()=>{if(document.hidden){capture();save();}});
+window.addEventListener('pagehide',()=>{flushImpressions();capture();save();});
+document.addEventListener('visibilitychange',()=>{if(document.hidden){flushImpressions();capture();save();}});
 window.addEventListener('storage',event=> {
   if(event.key!=='type-writing-room-v1'||!event.newValue)return;
   // Avoid silently replacing a page while its author is typing in this tab.

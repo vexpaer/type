@@ -5,12 +5,14 @@ import { enamelSurface, keyLegendAtlas, contactShadow } from './materials';
 import { typebarPose } from './mechanics.js';
 
 export type MovingBar = { group: THREE.Group; rest: THREE.Quaternion; raised: THREE.Quaternion; strokes: number[] };
-export type MovingKey = { group: THREE.Group; rest: number; value: string; bar: MovingBar | null; strokes: number[]; spring: { position: number; velocity: number } };
+export type MovingKey = { group: THREE.Group; rest: number; value: string; bar: MovingBar | null; lever?: THREE.Group; strokes: number[]; spring: { position: number; velocity: number } };
 type Material = THREE.MeshStandardMaterial;
 
 /** A continuous cast shell, a recessed keyboard, and individually hinged type bars. */
 export function buildMachine(own: <T extends THREE.Texture>(texture: T) => T) {
   const machine = new THREE.Group(), carriage = new THREE.Group(), lever = new THREE.Group(), ribbonLift = new THREE.Group();
+  const typeBasket = new THREE.Group(), bellStriker = new THREE.Group();
+  machine.add(typeBasket);
   const keys = new Map<string, MovingKey>(), targets: THREE.Object3D[] = [], bars: MovingBar[] = [];
   const spools: THREE.Group[] = [], rollers: THREE.Object3D[] = [];
   const grain = own(enamelSurface());
@@ -80,15 +82,15 @@ export function buildMachine(own: <T extends THREE.Texture>(texture: T) => T) {
   const basket = new THREE.Shape(); basket.absarc(0, 0, 1.74, .1, Math.PI - .1, false);
   basket.lineTo(-1.4, .02); basket.absarc(0, 0, 1.4, Math.PI - .1, .1, true); basket.closePath();
   const basketMesh = new THREE.Mesh(new THREE.ExtrudeGeometry(basket, { depth: .14, bevelEnabled: true, bevelSize: .025, bevelThickness: .025, bevelSegments: 2, curveSegments: 44 }), black);
-  basketMesh.rotation.x = -Math.PI / 2; basketMesh.position.set(0, .95, -1.38); basketMesh.castShadow = basketMesh.receiveShadow = true; machine.add(basketMesh);
+  basketMesh.rotation.x = -Math.PI / 2; basketMesh.position.set(0, .95, -1.38); basketMesh.castShadow = basketMesh.receiveShadow = true; typeBasket.add(basketMesh);
   for (let i = 0; i < 44; i++) {
     const pose = typebarPose(i), pivot = new THREE.Group(); pivot.position.fromArray(pose.pivot);
     const rest = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3().fromArray(pose.resting).normalize());
     const raised = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3().fromArray(pose.raised));
-    pivot.quaternion.copy(rest); machine.add(pivot);
+    pivot.quaternion.copy(rest); typeBasket.add(pivot);
     box(.025, pose.length - .08, .024, steel, 0, (pose.length - .08) / 2, 0, .006, pivot);
     box(.064, .08, .052, steel, 0, pose.length - .04, 0, .008, pivot);
-    cylinder(.036, .075, brass, pose.pivot[0], pose.pivot[1] - .04, pose.pivot[2], machine, 10);
+    cylinder(.036, .075, brass, pose.pivot[0], pose.pivot[1] - .04, pose.pivot[2], typeBasket, 10);
     bars.push({ group: pivot, rest, raised, strokes: [] });
   }
 
@@ -98,7 +100,15 @@ export function buildMachine(own: <T extends THREE.Texture>(texture: T) => T) {
   const makeKey = (text: string, value: string, x: number, y: number, z: number, sub = '', redKey = false) => {
     const group = new THREE.Group(); group.position.set(x, y, z); machine.add(group);
     const hasBar = value.length === 1;
-    const key: MovingKey = { group, rest: y, value, bar: hasBar ? bars[barIndex++] : null, strokes: [], spring: { position: 0, velocity: 0 } };
+    // Each printable key drives an exposed rearward lever under the recessed bed.
+    const lever = hasBar ? new THREE.Group() : undefined;
+    if (lever) {
+      lever.position.set(x, y - .245, z - .12); machine.add(lever);
+      rod(new THREE.Vector3(0, 0, .06), new THREE.Vector3(0, -.045, -.48), .012, steel, lever);
+      cylinder(.028, .065, brass, 0, 0, .05, lever, 10);
+      box(.09, .025, .11, nickel, 0, -.05, -.46, .006, lever);
+    }
+    const key: MovingKey = { group, rest: y, value, bar: hasBar ? bars[barIndex++] : null, lever, strokes: [], spring: { position: 0, velocity: 0 } };
     keys.set(value, key); ordered.push(key); legends.push({ text, sub }); colors.push(new THREE.Color(redKey ? 0x5a2823 : 0x101713));
   };
   const rows = [
@@ -108,6 +118,21 @@ export function buildMachine(own: <T extends THREE.Texture>(texture: T) => T) {
     { letters: 'ZXCVBNM,./', subs: '', z: 1.67, y: .68, offset: .19 },
   ];
   for (const row of rows) [...row.letters].forEach((letter, i) => makeKey(letter, letter.toLowerCase(), (i - (row.letters.length - 1) / 2) * .535 + row.offset, row.y, row.z, row.subs[i] || ''));
+  // Etched character faces share one texture atlas; each typebar carries its own slug.
+  const slugCanvas = document.createElement('canvas'); slugCanvas.width = 1024; slugCanvas.height = 768;
+  const slugCtx = slugCanvas.getContext('2d')!;
+  slugCtx.clearRect(0, 0, slugCanvas.width, slugCanvas.height);
+  slugCtx.textAlign = 'center'; slugCtx.textBaseline = 'middle'; slugCtx.font = 'bold 87px Georgia'; slugCtx.fillStyle = '#d6d7ce';
+  ordered.forEach((key, i) => slugCtx.fillText(key.value.toUpperCase(), (i % 8 + .5) * 128, (Math.floor(i / 8) + .51) * 128));
+  const slugTexture = own(new THREE.CanvasTexture(slugCanvas)); slugTexture.colorSpace = THREE.SRGBColorSpace;
+  const slugMaterial = new THREE.MeshStandardMaterial({ map: slugTexture, transparent: true, depthWrite: false, roughness: .66, metalness: .33, side: THREE.DoubleSide });
+  ordered.forEach((key, i) => {
+    if (!key.bar) return;
+    const geometry = new THREE.PlaneGeometry(.047, .048);
+    const uv = geometry.getAttribute('uv') as THREE.BufferAttribute;
+    for (let j = 0; j < uv.count; j++) uv.setXY(j, (i % 8 + uv.getX(j)) / 8, 1 - (Math.floor(i / 8) + 1 - uv.getY(j)) / 6);
+    const face = new THREE.Mesh(geometry, slugMaterial); face.position.set(0, typebarPose(i).length - .044, .031); key.bar.group.add(face);
+  });
   makeKey('SHIFT', 'shift', -2.97, .68, 1.67); makeKey('SHIFT', 'shift-right', 3.08, .68, 1.67);
   makeKey('BACK', 'backspace', 3.05, 1.01, .05, '', true); makeKey('LOCK', 'capslock', -3.01, .9, .59, '', true);
   const cap = new THREE.LatheGeometry([new THREE.Vector2(.025, -.23), new THREE.Vector2(.025, -.04), new THREE.Vector2(.178, -.04), new THREE.Vector2(.197, -.016), new THREE.Vector2(.197, .025), new THREE.Vector2(.182, .03)], 32);
@@ -157,7 +182,7 @@ export function buildMachine(own: <T extends THREE.Texture>(texture: T) => T) {
     const tape = new THREE.Mesh(new THREE.PlaneGeometry(1.91, .09), ribbon);
     tape.position.set(side * 1.15, 1.75, -1.46); tape.rotation.y = side * .16; tape.rotation.z = side * .12; machine.add(tape);
   }
-  ribbonLift.position.set(0, 1.91, -1.515); machine.add(ribbonLift);
+  ribbonLift.position.set(0, 1.91, -1.54); machine.add(ribbonLift);
   box(.48, .092, .016, ribbon, 0, 0, 0, .003, ribbonLift); box(.48, .056, .016, red, 0, -.07, 0, .003, ribbonLift);
   for (const x of [-.26, .26]) box(.023, .25, .045, steel, x, -.025, .025, .006, ribbonLift);
 
@@ -196,13 +221,22 @@ export function buildMachine(own: <T extends THREE.Texture>(texture: T) => T) {
   const returnPad = box(.52, .075, .2, black, -.1, .4, .49, .035, lever);
   returnPad.userData.key = { group: lever, rest: 2.02, value: 'enter', bar: null, strokes: [], spring: { position: 0, velocity: 0 } } satisfies MovingKey;
   targets.push(returnPad);
+  // The carriage-mounted margin bell has a separate swinging hammer. Both ride the rails.
+  const bell = new THREE.Group(); bell.position.set(3.43, 1.84, -1.99); carriage.add(bell);
+  cylinder(.155, .14, brass, 0, .1, 0, bell, 32);
+  cylinder(.19, .028, nickel, 0, .02, 0, bell, 32);
+  cylinder(.023, .07, chrome, 0, .205, 0, bell);
+  cylinder(.048, .025, brass, 0, .255, 0, bell);
+  bellStriker.position.set(-.26, .11, .085); bell.add(bellStriker);
+  rod(new THREE.Vector3(0, 0, 0), new THREE.Vector3(.18, .045, -.04), .022, chrome, bellStriker);
+  cylinder(.038, .063, steel, .18, .045, -.04, bellStriker, 12);
   cylinder(.045, .07, red, 3.08, 1.23, -.24);
 
   // Local contact occlusion under the chassis and in the recessed keyboard.
   const shadow = new THREE.Mesh(new THREE.PlaneGeometry(9.1, 6.3), new THREE.MeshBasicMaterial({ map: own(contactShadow()), transparent: true, depthWrite: false, opacity: .8 }));
   shadow.rotation.x = -Math.PI / 2; shadow.position.set(0, -.105, .15); machine.add(shadow);
   // Batch static meshes recursively within each moving assembly, leaving hit targets intact.
-  for (const root of [machine, carriage, ...spools, ...rollers, lever, ...bars.map(bar => bar.group), space]) {
+  for (const root of [machine, carriage, typeBasket, bell, bellStriker, ...spools, ...rollers, lever, ...bars.map(bar => bar.group), space]) {
     const batches = new Map<string, { material: THREE.Material; shadow: boolean; meshes: THREE.Mesh[] }>();
     for (const object of [...root.children]) {
       if (!(object instanceof THREE.Mesh) || object instanceof THREE.InstancedMesh || Array.isArray(object.material) || targets.includes(object) || object.material.transparent) continue;
@@ -234,5 +268,5 @@ export function buildMachine(own: <T extends THREE.Texture>(texture: T) => T) {
     // A shared geometry (e.g. the two cheeks) is retired only after both have been batched.
     retired.forEach(geometry => geometry.dispose());
   }
-  return { machine, carriage, keys, bars, targets, spools, rollers, lever, ribbonLift, syncKeys };
+  return { machine, carriage, typeBasket, bellStriker, keys, bars, targets, spools, rollers, lever, ribbonLift, syncKeys };
 }

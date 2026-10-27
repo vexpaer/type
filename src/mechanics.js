@@ -1,5 +1,7 @@
 /** Mechanical timing is independent of text insertion and can overlap at typing speed. */
 export const IMPACT_MS = 58;
+// Contact is on the tangent-wrapped sheet, just behind the raised ink ribbon.
+export const STRIKE_TARGET = Object.freeze([0, 2.038, -1.556]);
 const clamp = (n, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, n));
 const smooth = n => { const t = clamp(n); return t * t * (3 - 2 * t); };
 
@@ -30,7 +32,7 @@ export function advanceKey(state, target, dt) {
 export function typebarPose(index, count = 44) {
   const angle = (index / Math.max(1, count - 1) - .5) * 2.42;
   const pivot = [Math.sin(angle) * 1.48, .99, -1.38 + Math.cos(angle) * 1.23];
-  const target = [0, 2.035, -1.535];
+  const target = [...STRIKE_TARGET];
   const delta = target.map((n, i) => n - pivot[i]);
   const length = Math.hypot(...delta);
   const horizontal = Math.hypot(delta[0], delta[2]);
@@ -53,4 +55,11 @@ export function quadMatrix(width, height, points) {
   return [(p1.x - p0.x + g * p1.x) / width, (p1.y - p0.y + g * p1.y) / width, 0, g / width,
     (p3.x - p0.x + h * p3.x) / height, (p3.y - p0.y + h * p3.y) / height, 0, h / height,
     0, 0, 1, 0, p0.x, p0.y, 0, 1];
+}
+
+/** Project the column of a queued mechanical strike without mutating the native editor. */
+export function forecastTyping(text, start, end, pending) {
+  const from = Math.max(0, Math.min(text.length, start));
+  const to = Math.max(from, Math.min(text.length, end));
+  return { text: text.slice(0, from) + pending + text.slice(to), caret: from + pending.length };
 }
