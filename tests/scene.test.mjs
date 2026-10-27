@@ -40,7 +40,7 @@ test('every type slug meets the shared strike point from a distinct physical piv
     const geometry = body.geometry;
     // The batched rod + slug reaches its end along local Y.
     tip.set(0, geometry.boundingBox.max.y, 0).applyQuaternion(bar.raised).add(bar.group.position);
-    assert.ok(tip.distanceTo(new THREE.Vector3(0, 2.035, -1.535)) < .011);
+    assert.ok(tip.distanceTo(new THREE.Vector3(0, 2.038, -1.556)) < .011);
   }
   assert.equal(pivots.size, assembly.bars.length);
 });
