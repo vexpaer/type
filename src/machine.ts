@@ -182,7 +182,7 @@ export function buildMachine(own: <T extends THREE.Texture>(texture: T) => T) {
     const tape = new THREE.Mesh(new THREE.PlaneGeometry(1.91, .09), ribbon);
     tape.position.set(side * 1.15, 1.75, -1.46); tape.rotation.y = side * .16; tape.rotation.z = side * .12; machine.add(tape);
   }
-  ribbonLift.position.set(0, 1.91, -1.515); machine.add(ribbonLift);
+  ribbonLift.position.set(0, 1.91, -1.54); machine.add(ribbonLift);
   box(.48, .092, .016, ribbon, 0, 0, 0, .003, ribbonLift); box(.48, .056, .016, red, 0, -.07, 0, .003, ribbonLift);
   for (const x of [-.26, .26]) box(.023, .25, .045, steel, x, -.025, .025, .006, ribbonLift);
 
