@@ -12,9 +12,9 @@ colors:
   atelier-ink: "#eee5d5"
   atelier-muted: "#c1b5a5"
   atelier-panel: "#393129"
-  paper: "#e9dfc8"
+  paper: "#f5efdf"
   paper-ink: "#332c23"
-  enamel: "#242d29"
+  enamel: "#17201d"
   key-face: "#101712"
   aged-nickel: "#a29f8d"
   ivory-legend: "#e0d7bc"
@@ -125,7 +125,7 @@ The frontmatter gives desktop defaults. The writing size is adjustable, and resp
 
 The quiet room is a centered column with a maximum width of 680px, a top utility bar and a fixed bottom bar. Its title precedes the date and body; the empty page begins with placeholders rather than sample writing. Focus mode withdraws the perimeter controls while retaining an explicit exit.
 
-The atelier shares a coordinate relationship between the machine, paper mesh and DOM editor. The native page is projected over the paper’s central reading region; surrounding edges can curl and flex. Long writing scrolls inside the paper so the caret can remain above the platen. Keep menu surfaces opaque over text.
+The atelier shares a coordinate relationship between the machine, paper mesh and DOM editor. The native page uses a four-corner CSS homography over the paper’s central reading region; surrounding edges can curl and flex. Long writing scrolls inside the paper so the caret can remain above the platen. Keep menu surfaces opaque over text.
 
 At 768px and 520px boundaries, header spacing contracts, secondary statistics disappear and paper padding reduces. The machine stage is contained within the room without horizontal page overflow. Short desktop viewports retain a minimum room height rather than crushing the paper. The drawer is at most 360px wide and leaves a visible edge of the page; narrow theme pickers fit within the viewport. Respect bottom safe-area padding.
 
@@ -133,17 +133,17 @@ At 768px and 520px boundaries, header spacing contracts, secondary statistics di
 
 The quiet room is predominantly flat; fine separators, tonal state changes and diffuse menu shadows establish hierarchy. Floating menus use a restrained shadow (`0 12px 44px #0000000d`); the drawer uses a broad side shadow (`10px 0 60px #0000000a`).
 
-The atelier’s depth comes from real mesh geometry, physically based materials, environment light and cast shadows. Thin rims and shallow concave faces make individual keys distinct. Short stems, a recessed keyboard bed and concealed spring hardware keep the keyboard silhouette low. Paper has a textured surface, a thin underside, a visible edge and restrained curls. Its central reading area remains calm enough to edit.
+The atelier’s depth comes from real mesh geometry, physically based materials, environment light and cast shadows. Thin rims and shallow concave faces make individual keys distinct. Short stems, a recessed keyboard bed and concealed spring hardware keep the keyboard silhouette low. Paper has a subtly textured surface, a thin underside, a visible edge and restrained asymmetric curls. Its feed edge wraps tangentially around the rubber platen. Keep enamel mostly dielectric with a clear coat; reserve metallic reflections for exposed metal. Its central reading area remains calm enough to edit.
 
 ## Shapes
 
-Utility icon buttons are circular; the room switch is a pill. Menus and list rows have modest rounded corners. The paper reads as a thin sheet rather than a rounded card. The machine combines a substantial enamel base with finer rods, staggered round keys and a long black space bar. Preserve the current shallow key profile and narrow metal rims.
+Utility icon buttons are circular; the room switch is a pill. Menus and list rows have modest rounded corners. The paper reads as a thin sheet rather than a rounded card. The machine combines one substantial enamel base and continuous profiled side cheeks with a recessed key bed, finer rods, staggered round keys and a long black space bar. Its gentle perspective camera fits fixed paper dimensions rather than stretching the paper to the viewport. Narrow screens deliberately crop the outer machine while preserving the page. Preserve the current shallow key profile and narrow metal rims.
 
 ## Components
 
 **Writing page.** Use native, labelled title and body controls. The 3D mesh is a material surround, not a replacement input. Preserve selection and text through room changes, and clear atelier positioning when returning to the quiet room.
 
-**Typewriter.** Individual keys and type bars, ribbon, spools, carriage and return lever respond to input. Raycast keys and the lever support click-to-type; physical keyboard editing remains primary. Corner controls support pointer dragging and keyboard flexing. The paper response is a damped visual model rather than a measured material simulation.
+**Typewriter.** Individual keys and type bars, ribbon, spools, carriage and return lever respond to input. Every type bar pivots independently toward one strike point. Overlapping stroke envelopes and continuous key springs preserve rapid repeated input. The carriage follows measured visual line progress with bounded travel, including soft wraps; composition commits use neutral print feedback. Shared instanced key meshes and a legend atlas limit draw calls. Raycast keys and the lever support click-to-type; physical keyboard editing remains primary. Corner controls support pointer dragging and keyboard flexing. The paper response is a damped visual model rather than a measured material simulation.
 
 **Motion.** Feedback follows a keystroke or a deliberate room change. Mechanical and paper motion settles; rendering sleeps at rest and in background tabs. Honor reduced motion by suppressing animated feedback and corner flexing. Do not add continuous idle movement.
 

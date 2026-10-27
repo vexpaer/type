@@ -14,10 +14,10 @@ export class TypingAudio {
     }
     if (this.context.state === 'suspended') void this.context.resume();
   }
-  strike(retro: boolean, returnKey = false) {
+  strike(retro: boolean, returnKey = false, delay = 0) {
     if (!this.enabled) return;
     this.activate();
-    const ctx = this.context!, now = ctx.currentTime;
+    const ctx = this.context!, now = ctx.currentTime + delay;
     const source = ctx.createBufferSource(); source.buffer = this.noise;
     const filter = ctx.createBiquadFilter(); filter.type = 'bandpass'; filter.frequency.value = retro ? 1600 + Math.random() * 650 : 850; filter.Q.value = .7;
     const gain = ctx.createGain(); gain.gain.setValueAtTime(retro ? .5 : .17, now); gain.gain.exponentialRampToValueAtTime(.001, now + (retro ? .055 : .025));
@@ -26,14 +26,14 @@ export class TypingAudio {
       const oscillator = ctx.createOscillator(), body = ctx.createGain(); oscillator.type = 'triangle'; oscillator.frequency.setValueAtTime(returnKey ? 140 : 190 + Math.random() * 50, now); oscillator.frequency.exponentialRampToValueAtTime(65, now + .045);
       body.gain.setValueAtTime(.16, now); body.gain.exponentialRampToValueAtTime(.001, now + .09); oscillator.connect(body); body.connect(this.master!); oscillator.start(now); oscillator.stop(now + .1);
     }
-    if (retro && returnKey) this.bell();
+    if (retro && returnKey) this.bell(delay);
   }
-  bell() {
+  bell(delay = 0) {
     if (!this.enabled || !this.context) return;
-    const ctx = this.context, now = ctx.currentTime;
+    const ctx = this.context, now = ctx.currentTime + delay;
     for (const [frequency, volume] of [[1720, .1], [3451, .025]]) {
       const oscillator = ctx.createOscillator(), gain = ctx.createGain(); oscillator.frequency.value = frequency;
-      gain.gain.setValueAtTime(volume, now); gain.gain.exponentialRampToValueAtTime(.001, now + .65); oscillator.connect(gain); gain.connect(this.master!); oscillator.start(); oscillator.stop(now + .7);
+      gain.gain.setValueAtTime(volume, now); gain.gain.exponentialRampToValueAtTime(.001, now + .65); oscillator.connect(gain); gain.connect(this.master!); oscillator.start(now); oscillator.stop(now + .7);
     }
   }
 }

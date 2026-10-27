@@ -1,7 +1,7 @@
 /* The established atelier, with the page and instrument sharing one 3D coordinate space. */
 [data-theme=atelier] { --ground: #302820; --ink: #eee5d5; --muted: #c1b5a5; --panel: #393129; }
 html[data-theme=atelier], [data-theme=atelier] body { overflow-x: hidden; }
-[data-theme=atelier] #app { background: radial-gradient(ellipse at 43% 24%, #4c3c2d 0, #302820 72%); }
+[data-theme=atelier] #app { background: radial-gradient(ellipse at 34% 18%, #4b4034 0, #302820 74%); }
 [data-theme=atelier] .retro-ambience::after { display: none; }
 [data-theme=atelier] .writing-room { min-height: max(680px, calc(100svh - 100px)); isolation: isolate; overflow: clip; }
 [data-theme=atelier] .room-caption { top: 7px; }
@@ -9,20 +9,20 @@ html[data-theme=atelier], [data-theme=atelier] body { overflow-x: hidden; }
   position: absolute; display: block; top: 0; bottom: 72px; height: auto;
   width: min(100%, 1060px); left: 50%; transform: translateX(-50%);
   z-index: 1; pointer-events: auto; animation: none;
-  mask-image: linear-gradient(transparent, #000 48px, #000 calc(100% - 26px), transparent), linear-gradient(90deg, transparent, #000 9%, #000 91%, transparent);
+  mask-image: linear-gradient(transparent, #000 38px, #000 calc(100% - 26px), transparent), linear-gradient(90deg, transparent, #000 3%, #000 97%, transparent);
   mask-composite: intersect;
 }
 .machine-stage canvas { width: 100%; height: 100%; display: block; touch-action: pan-y; }
 [data-theme=atelier] .writing-room .page {
   top: 0; left: 0; margin: 0; z-index: 3; min-height: 0; border-radius: 0;
   animation: none; transform-origin: 0 0; clip-path: none;
-  background-color: #e9dfc8; background-image: var(--paper-fibre);
+  background-color: #f5efdf; background-image: var(--paper-fibre);
   box-shadow: 2px 9px 24px #0004;
 }
 [data-theme=atelier] .writing-room.has-3d-paper .page { background: transparent; box-shadow: none; }
 [data-theme=atelier] .writing-room .page::after,
 [data-theme=atelier] .writing-room .paper-texture { display: none; }
-[data-theme=atelier] .writing-room .page-inner { padding: 31px 42px 43px; overscroll-behavior: contain; scrollbar-gutter: stable; scrollbar-color: #82745c66 transparent; }
+[data-theme=atelier] .writing-room .page-inner { padding: 32px 38px 30px; overscroll-behavior: contain; scrollbar-gutter: stable; scrollbar-color: #82745c66 transparent; }
 [data-theme=atelier] .writing-room .page-heading { margin-bottom: 20px; }
 [data-theme=atelier] .writing-room #page-title { color: #332c23; font-size: 25px; letter-spacing: -.6px; }
 [data-theme=atelier] .writing-room #editor { color: #332c23; font-size: calc(var(--editor-size) - 4px); line-height: 1.85; min-height: 110px; caret-color: #652d24; }
@@ -44,7 +44,7 @@ html[data-theme=atelier], [data-theme=atelier] body { overflow-x: hidden; }
 .page:hover .paper-corner, .paper-corner:focus-visible { opacity: .8; }
 [data-theme=atelier] .bottom-bar { background: linear-gradient(transparent, #302820e6 45%); }
 [data-theme=atelier] .theme-button { background: #3b3128; }
-[data-theme=atelier] .theme-swatch { background: #e9dfc8; }
+[data-theme=atelier] .theme-swatch { background: #f5efdf; }
 
 /* A fully editable fallback if WebGL is absent or its context is lost. */
 .machine-fallback { display: none; }

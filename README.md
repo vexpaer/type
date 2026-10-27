@@ -6,11 +6,11 @@ A quiet place to write. Two rooms, one page.
 
 ## The rooms
 
-| The quiet room | The writer’s atelier |
+| The quiet room | Atelier reference · October 26 |
 | --- | --- |
 | ![Minimalist writing room](docs/screenshots/quiet-room.jpg) | ![3D typewriter and paper in the writer’s atelier](docs/screenshots/atelier.jpg) |
 
-The atelier screenshot was captured in WebGL-enabled Chromium using ANGLE SwiftShader. It shows the current 3D scene, including its lighting, shadows and paper mesh; it is not a hardware-GPU performance benchmark.
+The atelier image is a historical WebGL capture from October 26, before the mechanical refinement below. It does not show the current shell, perspective camera or paper feed. Current verification and its limits are recorded in [the QA notes](docs/design-and-qa.md).
 
 ## Write
 
@@ -60,11 +60,11 @@ The workflow runs the build and unit tests on pushes and pull requests. Every pu
 
 ### The typewriter
 
-`src/typewriter.ts` lazy-loads with the atelier and builds the scene from local meshes and procedural textures. The machine has an enamel body, shallow concave near-black keys with thin aged-nickel rims and ivory legends, a black space bar, individual type bars, spools, two-tone ribbon, platen, paper bail, margin scale and return lever. Keys, type bars, ribbon, spools, carriage and return lever respond to typing. Click the 3D keys or return lever to write into the same native editor.
+`src/typewriter.ts` lazy-loads with the atelier and builds the scene from local meshes and procedural textures. The machine has a continuous profiled enamel casting, a recessed keyboard, shallow concave near-black keys with thin aged-nickel rims and ivory legends, a black space bar, individual type bars, spools, two-tone ribbon, platen, paper bail, margin scale and return lever. Each type bar has its own segment pivot and reaches the same strike point. Key bodies and lettering use shared instanced meshes and one legend atlas. A gentle perspective camera frames the whole assembly on desktop and crops the machine sides on phones to preserve paper readability. Keys, type bars, ribbon, spools, carriage and return lever respond to typing with overlapping strokes and synchronized impact audio. The carriage follows the measured visual column, including soft wraps and wide glyphs, within bounded travel that keeps the native editor readable. Composition commits animate the print mechanism without choosing an unrelated letter key. Click the 3D keys or return lever to write into the same native editor.
 
-The paper is a deforming 40 × 56-segment mesh with a thin underside, visible edge and procedural fibre and bump textures. A damped, coupled bending model responds to typing, carriage returns and corner dragging. This is lightweight visual physics, not measured paper mechanics, finite-element analysis or a full rigid-body simulation. The native textarea stays over the paper’s central reading area, preserving normal editing and selection.
+The paper is a deforming 40 × 56-segment mesh with fixed physical dimensions, a tangent wrap around the rubber platen, a thin underside, visible edge and subtle procedural fibre and bump textures. A damped, coupled bending model responds to typing, carriage returns and corner dragging. This is lightweight visual physics, not measured paper mechanics, finite-element analysis or a full rigid-body simulation. A four-corner projective transform places the native textarea over the paper’s stable central reading area, preserving normal editing and selection. Typing moves the free edges; the reading plane stays rigid.
 
-WebGL uses physically based materials, environment lighting and shadows. Rendering pauses at rest and in background tabs; reduced-motion mode suppresses animated feedback and corner flexing. If WebGL cannot initialize or its context is lost, an editable paper surface and dimensional CSS keyboard remain available. There is no SVG scene renderer.
+WebGL uses dielectric clear-coated enamel, metal-specific surfaces, large window lighting, matching reflection cards, cast shadows and local contact shading. Rendering pauses at rest and in background tabs; reduced-motion mode suppresses animated feedback and corner flexing. If WebGL cannot initialize or its context is lost, an editable paper surface and dimensional CSS keyboard remain available. There is no SVG scene renderer.
 
 ## Design and verification
 
