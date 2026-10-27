@@ -98,3 +98,12 @@ test('the engraved basket, articulated key levers and carriage bell are independ
   assert.ok(assembly.bellStriker.parent.parent === assembly.carriage);
   assert.equal(assembly.keys.get(' ').bar, null);
 });
+
+test('steel slug impact is on the wrapped paper surface, behind the ribbon', () => {
+  const [x, y, z] = [0, 2.038, -1.556];
+  const paperY = (y - PAPER_ANCHOR.y) / Math.cos(PAPER_TILT);
+  const wrap = paperY < 0 ? -.264 + Math.sqrt(.264 ** 2 - paperY ** 2) : 0;
+  const paperZ = PAPER_ANCHOR.z + Math.sin(PAPER_TILT) * paperY + Math.cos(PAPER_TILT) * wrap;
+  assert.equal(x, 0);
+  assert.ok(Math.abs(paperZ - z) < .01, 'slug must touch the 3D sheet at the platen');
+});
