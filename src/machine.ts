@@ -11,6 +11,8 @@ type Material = THREE.MeshStandardMaterial;
 /** A continuous cast shell, a recessed keyboard, and individually hinged type bars. */
 export function buildMachine(own: <T extends THREE.Texture>(texture: T) => T) {
   const machine = new THREE.Group(), carriage = new THREE.Group(), lever = new THREE.Group(), ribbonLift = new THREE.Group();
+  const typeBasket = new THREE.Group(), bellStriker = new THREE.Group();
+  machine.add(typeBasket);
   const keys = new Map<string, MovingKey>(), targets: THREE.Object3D[] = [], bars: MovingBar[] = [];
   const spools: THREE.Group[] = [], rollers: THREE.Object3D[] = [];
   const grain = own(enamelSurface());
@@ -80,15 +82,15 @@ export function buildMachine(own: <T extends THREE.Texture>(texture: T) => T) {
   const basket = new THREE.Shape(); basket.absarc(0, 0, 1.74, .1, Math.PI - .1, false);
   basket.lineTo(-1.4, .02); basket.absarc(0, 0, 1.4, Math.PI - .1, .1, true); basket.closePath();
   const basketMesh = new THREE.Mesh(new THREE.ExtrudeGeometry(basket, { depth: .14, bevelEnabled: true, bevelSize: .025, bevelThickness: .025, bevelSegments: 2, curveSegments: 44 }), black);
-  basketMesh.rotation.x = -Math.PI / 2; basketMesh.position.set(0, .95, -1.38); basketMesh.castShadow = basketMesh.receiveShadow = true; machine.add(basketMesh);
+  basketMesh.rotation.x = -Math.PI / 2; basketMesh.position.set(0, .95, -1.38); basketMesh.castShadow = basketMesh.receiveShadow = true; typeBasket.add(basketMesh);
   for (let i = 0; i < 44; i++) {
     const pose = typebarPose(i), pivot = new THREE.Group(); pivot.position.fromArray(pose.pivot);
     const rest = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3().fromArray(pose.resting).normalize());
     const raised = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3().fromArray(pose.raised));
-    pivot.quaternion.copy(rest); machine.add(pivot);
+    pivot.quaternion.copy(rest); typeBasket.add(pivot);
     box(.025, pose.length - .08, .024, steel, 0, (pose.length - .08) / 2, 0, .006, pivot);
     box(.064, .08, .052, steel, 0, pose.length - .04, 0, .008, pivot);
-    cylinder(.036, .075, brass, pose.pivot[0], pose.pivot[1] - .04, pose.pivot[2], machine, 10);
+    cylinder(.036, .075, brass, pose.pivot[0], pose.pivot[1] - .04, pose.pivot[2], typeBasket, 10);
     bars.push({ group: pivot, rest, raised, strokes: [] });
   }
 
@@ -196,13 +198,22 @@ export function buildMachine(own: <T extends THREE.Texture>(texture: T) => T) {
   const returnPad = box(.52, .075, .2, black, -.1, .4, .49, .035, lever);
   returnPad.userData.key = { group: lever, rest: 2.02, value: 'enter', bar: null, strokes: [], spring: { position: 0, velocity: 0 } } satisfies MovingKey;
   targets.push(returnPad);
+  // The carriage-mounted margin bell has a separate swinging hammer. Both ride the rails.
+  const bell = new THREE.Group(); bell.position.set(3.43, 1.84, -1.99); carriage.add(bell);
+  cylinder(.155, .14, brass, 0, .1, 0, bell, 32);
+  cylinder(.19, .028, nickel, 0, .02, 0, bell, 32);
+  cylinder(.023, .07, chrome, 0, .205, 0, bell);
+  cylinder(.048, .025, brass, 0, .255, 0, bell);
+  bellStriker.position.set(-.26, .11, .085); bell.add(bellStriker);
+  rod(new THREE.Vector3(0, 0, 0), new THREE.Vector3(.18, .045, -.04), .022, chrome, bellStriker);
+  cylinder(.038, .063, steel, .18, .045, -.04, bellStriker, 12);
   cylinder(.045, .07, red, 3.08, 1.23, -.24);
 
   // Local contact occlusion under the chassis and in the recessed keyboard.
   const shadow = new THREE.Mesh(new THREE.PlaneGeometry(9.1, 6.3), new THREE.MeshBasicMaterial({ map: own(contactShadow()), transparent: true, depthWrite: false, opacity: .8 }));
   shadow.rotation.x = -Math.PI / 2; shadow.position.set(0, -.105, .15); machine.add(shadow);
   // Batch static meshes recursively within each moving assembly, leaving hit targets intact.
-  for (const root of [machine, carriage, ...spools, ...rollers, lever, ...bars.map(bar => bar.group), space]) {
+  for (const root of [machine, carriage, typeBasket, bell, bellStriker, ...spools, ...rollers, lever, ...bars.map(bar => bar.group), space]) {
     const batches = new Map<string, { material: THREE.Material; shadow: boolean; meshes: THREE.Mesh[] }>();
     for (const object of [...root.children]) {
       if (!(object instanceof THREE.Mesh) || object instanceof THREE.InstancedMesh || Array.isArray(object.material) || targets.includes(object) || object.material.transparent) continue;
@@ -234,5 +245,5 @@ export function buildMachine(own: <T extends THREE.Texture>(texture: T) => T) {
     // A shared geometry (e.g. the two cheeks) is retired only after both have been batched.
     retired.forEach(geometry => geometry.dispose());
   }
-  return { machine, carriage, keys, bars, targets, spools, rollers, lever, ribbonLift, syncKeys };
+  return { machine, carriage, typeBasket, bellStriker, keys, bars, targets, spools, rollers, lever, ribbonLift, syncKeys };
 }
