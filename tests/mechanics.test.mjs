@@ -52,6 +52,6 @@ test('the native editor homography aligns all four corners for affine and perspe
 test('queued strokes preserve correct columns under rapid input and mid-line edits', () => {
   assert.deepEqual(forecastTyping('', 0, 0, 'abc'), { text: 'abc', caret: 3 });
   assert.deepEqual(forecastTyping('Hello world', 5, 5, '!!'), { text: 'Hello!! world', caret: 7 });
-  assert.deepEqual(forecastTyping('before AFTER', 7, 12, 'new'), { text: 'before newR', caret: 10 });
+  assert.deepEqual(forecastTyping('before AFTER', 7, 12, 'new'), { text: 'before new', caret: 10 });
   assert.deepEqual(forecastTyping('漢字', 1, 1, 'abc'), { text: '漢abc字', caret: 4 });
 });
