@@ -20,6 +20,9 @@ html[data-theme=atelier], [data-theme=atelier] body { overflow-x: hidden; }
   box-shadow: 2px 9px 24px #0004;
 }
 [data-theme=atelier] .writing-room.has-3d-paper .page { background: transparent; box-shadow: none; }
+/* The newest physical line stays by the platen; previous lines feed upward. */
+[data-theme=atelier] .writing-room.has-3d-paper .page-inner { overflow: hidden; }
+[data-theme=atelier] .writing-room.has-3d-paper .editor-wrap { transform: translate3d(0, var(--type-feed-offset, 0px), 0); }
 [data-theme=atelier] .writing-room .page::after,
 [data-theme=atelier] .writing-room .paper-texture { display: none; }
 [data-theme=atelier] .writing-room .page-inner { padding: 32px 38px 30px; overscroll-behavior: contain; scrollbar-gutter: stable; scrollbar-color: #82745c66 transparent; }
