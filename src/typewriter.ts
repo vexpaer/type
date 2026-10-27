@@ -176,6 +176,7 @@ export class Typewriter {
     }
     const striking = value !== ' ' && value !== 'backspace' && !returning;
     if (striking) {
+      this.lastStrikeAt = now;
       this.strokes.push(now);
       // Only a real matching key moves a bar; IME commits never strike a random slug.
       if (key?.bar) key.bar.strokes.push(now);
