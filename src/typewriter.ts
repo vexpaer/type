@@ -44,6 +44,7 @@ export class Typewriter {
   private pendingResize = 0;
   private shiftStrokes: number[] = [];
   private bellAt = -10000;
+  private lastStrikeAt = -10000;
   private orbitYaw = 0;
   private orbitPitch = 0;
   private orbitScale = 1;
