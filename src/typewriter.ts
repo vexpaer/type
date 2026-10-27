@@ -194,7 +194,13 @@ export class Typewriter {
     const a = this.assembly;
     for (const impact of this.impacts.filter(impact => impact.at <= now || this.reduced.matches)) {
       // Carriage position is driven by the live caret; an old impact must not pull it backwards.
-      if (impact.strike) this.spoolTarget += .022;
+      if (impact.strike) {
+        // At contact the type slug, ribbon and intended print column share X=0.
+        // Remove spring lag only at the instant of imprint; the escapement then steps on.
+        this.carriagePosition = carriageOffset(impact.caret.progress, innerWidth < 600 ? 3.75 : 4.35);
+        this.carriageVelocity = 0;
+        this.spoolTarget += .022;
+      }
       if (impact.feed) this.rollerTarget -= .19;
       this.paper.strike(impact.caret.progress, impact.feed);
     }
